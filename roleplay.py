@@ -8,13 +8,12 @@ from red_star.command_dispatcher import Command
 from red_star.plugin_manager import BasePlugin
 from discord import Embed, File
 from io import BytesIO
+from dataclasses import dataclass, asdict
 
 
 class Roleplay(BasePlugin):
     name = "roleplay"
-    fields = ["name", "race", "gender", "height", "age", "theme", "link", "image", "appearance", "equipment", "skills",
-              "personality", "backstory", "interests"]
-    mandatory_fields = ["name", "race", "gender", "appearance", "backstory"]
+
     default_config = {
         "allow_race_requesting": False,
         "default": {
@@ -22,8 +21,105 @@ class Roleplay(BasePlugin):
         }
     }
 
+    @dataclass
+    class Bio:
+        author: int
+        name: str
+        race: str
+        gender: str
+        appearance: str
+        backstory: str
+        height: str
+        age: str
+        theme: str
+        link: str
+        image: str
+        equipment: str
+        skills: str
+        personality: str
+        interests: str
+
+        fields = ["author", "name", "race", "gender", "height", "age", "theme", "link", "image", "appearance",
+                  "equipment", "skills", "personality", "backstory", "interests"]
+        mandatory_fields = ["name", "race", "gender", "appearance", "backstory"]
+
+        lim_64 = ["race", "gender", "height", "age", "name"]
+
+        def set(self, field: str, value=None):
+            _f = field.lower()
+            if _f not in self.fields:
+                raise KeyError
+            if value:
+                if len(value) > (64 if _f in self.lim_64 else 1024):
+                    raise ValueError('64' if _f in self.lim_64 else '1024')
+                self.__dict__[_f] = self._name(value) if _f == 'name' else value
+            else:
+                self.__dict__[_f] = 'undefined' if _f in self.mandatory_fields else ''
+
+        @classmethod
+        def blank_bio(cls, author: int, name: str):
+            _t = dict(zip(cls.fields, ['']*15))
+            for f in cls.mandatory_fields:
+                _t[f] = 'undefined'
+
+            _t['author'] = author
+            _t['name'] = cls._name(name)
+
+            return cls(**_t)
+
+        @staticmethod
+        def _name(name: str)->str:
+            """
+            removes trailing/leading whitespace, limits whitespace between words to one space, removes newlines.
+            :param name:
+            :return:
+            """
+            _n = re.sub('\s+', ' ', re.sub('^\s+|\s+$|\n|\r', '', name))
+            if not _n:
+                raise CommandSyntaxError('Empty name provided.')
+            return _n[:64]
+
+        def embed(self, guild, roles)-> Embed:
+            """
+            Generates a pretty discord embed of this role.
+            :param guild: guild that the bio belongs to, for member and role searching
+            :param roles: list of accepted race roles
+            :return:
+            """
+            t_embed = Embed(type="rich", colour=16711680)
+
+            role = find_role(guild, self.race)
+
+            t_embed.title = self.name
+
+            if role and role.id in roles:
+                t_embed.colour = role.colour
+
+            t_member = guild.get_member(self.author)
+            if t_member:
+                t_embed.set_footer(text=f"Character belonging to {t_member.display_name}",
+                                   icon_url=t_member.avatar_url)
+
+            t_embed.description = "```\n" +\
+              '\n'.join([f"{f.capitalize():<7}: {self.__dict__[f]}" for f in self.fields[2:6] if self.__dict__[f]])\
+              + "```\n" +\
+              (f"[Theme song.]({self.theme})\n" if self.theme else '') + \
+              (f"[Extended bio.]({self.link})\n" if self.link else '') + \
+              (f"Owner: {t_member.mention}" if t_member else '')
+
+            if self.image:
+                t_embed.set_image(url=self.image)
+
+            for field in (f for f in self.fields[9:] if self.__dict__[f]):
+                t_embed.add_field(name=field.capitalize(), value=self.__dict__[field])
+
+            return t_embed
+
     async def activate(self):
-        self.bios = self.config_manager.get_plugin_config_file("bios.json")
+        self.bios = self.config_manager.get_plugin_config_file\
+            ("bios.json",
+             json_save_args={'default': lambda o: asdict(o), 'indent': 2, 'ensure_ascii': False},
+             json_load_args={'object_hook': lambda o: self.Bio(**o) if {*o} == {*self.Bio.fields} else o})
 
     @Command("Roll",
              doc="Rolls a specified amount of specified dice with specified bonus and advantage/disadvantage",
@@ -75,32 +171,53 @@ class Roleplay(BasePlugin):
                                    f"Result: {results}**")
 
     @Command("RaceRole",
-             doc="Adds or removes roles from the list of race roles that are searched by the bio command.",
-             syntax="add/remove (role mentions)",
+             doc="-a/--add   : Adds specified roles to the list of allowed race roles.\n"
+                 "-r/--remove: Removes speficied roles from the list.\n"
+                 "Calling it without any arguments prints the list.",
+             syntax="[-a/--add (role mentions/ids/names)] [-r/--remove (role mentions/ids/names)]",
              perms={"manage_messages"},
              category="role_play")
     async def _racerole(self, msg):
         gid = str(msg.guild.id)
         self._initialize(gid)
-        args = shlex.split(msg.content)
-        if len(args) < 2:
+
+        parser = RSArgumentParser()
+        parser.add_argument("command")
+        parser.add_argument("-a", "--add", default=[], nargs='+')
+        parser.add_argument("-r", "--remove", default=[], nargs='+')
+
+        args = parser.parse_args(shlex.split(msg.content))
+
+        if not (args['add'] or args['remove']):
             await split_output(msg, "**ANALYSIS: Currently approved race roles:**",
                                [x.name for x in msg.guild.roles if x.id in self.plugin_config[gid]["race_roles"]])
         else:
-            if args[1].lower() == "add":
-                for arg in args[1:]:
-                    t_role = find_role(msg.guild, arg)
-                    if t_role and t_role.id not in self.plugin_config[gid]["race_roles"]:
-                        self.plugin_config[gid]["race_roles"].append(t_role.id)
-                await respond(msg, "**AFFIRMATIVE. Roles added to race list.**")
-            elif args[1].lower() == "remove":
-                for arg in args[1:]:
-                    t_role = find_role(msg.guild, arg)
-                    if t_role and t_role.id not in self.plugin_config[gid]["race_roles"]:
-                        self.plugin_config[gid]["race_roles"].remove(t_role.id)
-                await respond(msg, "**AFFIRMATIVE. Roles removed from race list.**")
+            args['add'] = [r for r in [find_role(msg.guild, r) for r in args['add']] if r]
+            args['remove'] = [r for r in [find_role(msg.guild, r) for r in args['remove']]if r]
+
+            # for nice output
+            l_add = []
+            l_rem = []
+
+            for role in args['add']:
+                if role.id not in self.plugin_config[gid]["race_roles"]:
+                    l_add.append(role.name)
+                    self.plugin_config[gid]["race_roles"].append(role.id)
+            for role in args['remove']:
+                if role.id in self.plugin_config[gid]["race_roles"]:
+                    l_rem.append(role.name)
+                    self.plugin_config[gid]["race_roles"].remove(role.id)
+
+            if l_add or l_rem:
+                _s = "**AFFIRMATIVE. ANALYSIS:**\n```diff\n"
+                if l_add:
+                    _s += "Added roles:\n+ " + "\n+ ".join(l_add) + "\n"
+                if l_rem:
+                    _s += "Removed roles:\n- " + "\n- ".join(l_rem) + "\n"
+                _s += "```"
+                await respond(msg, _s)
             else:
-                raise CommandSyntaxError(f"Unsupported mode {args[1].lower()}.")
+                raise CommandSyntaxError
 
     @Command("GetRaceRole",
              doc="Allows the user to request one of the approved race roles for themselves.",
@@ -112,19 +229,19 @@ class Roleplay(BasePlugin):
         gid = str(msg.guild.id)
         self._initialize(gid)
         args = msg.content.split(" ", 1)
-        t_role_list = []
+        preexisting_roles = []
         for role in msg.author.roles:
             if role.id in self.plugin_config[gid]["race_roles"]:
-                t_role_list.append(role)
-        await msg.author.remove_roles(*t_role_list)
+                preexisting_roles.append(role)
+        await msg.author.remove_roles(*preexisting_roles)
         if len(args) < 2:
             await respond(msg, "**AFFIRMATIVE. Race role removed.**")
         else:
-            t_role = find_role(msg.guild, args[1])
-            if t_role:
-                if t_role.id in self.plugin_config[gid]["race_roles"]:
-                    await msg.author.add_roles(t_role)
-                    await respond(msg, f"**AFFIRMATIVE. Race role {str(t_role)} granted.**")
+            role = find_role(msg.guild, args[1])
+            if role:
+                if role.id in self.plugin_config[gid]["race_roles"]:
+                    await msg.author.add_roles(role)
+                    await respond(msg, f"**AFFIRMATIVE. Race role {role.name} granted.**")
                 else:
                     raise CommandSyntaxError("Not an approved race role.")
             else:
@@ -152,7 +269,7 @@ class Roleplay(BasePlugin):
         if len(args) > 1:
             t_member = find_user(msg.guild, args[1])
             if t_member:
-                t_bio_list = [f"{k[:16].ljust(16)} : {v['name']}" for k, v in self.bios[gid].items()
+                t_bio_list = [f"{k[:16].ljust(16)} : {v.name}" for k, v in self.bios[gid].items()
                               if v.get("author", 0) == t_member.id]
                 await split_output(msg, f"**ANALYSIS: User {t_member.display_name} has following characters:**",
                                    t_bio_list)
@@ -160,271 +277,171 @@ class Roleplay(BasePlugin):
                 raise CommandSyntaxError("Not a user or user not found.")
         else:
             await split_output(msg, "**ANALYSIS: Following character bios found:**",
-                               [f"{k[:16].ljust(16)} : {v['name']}" for k, v in self.bios[gid].items()])
+                               [f"{k[:16].ljust(16)} : {v.name}" for k, v in self.bios[gid].items()])
 
     @Command("Bio",
-             doc="Prints the specified character bio.",
-             syntax="(name)",
-             category="role_play",
-             run_anywhere=True)
+             doc="Prints, edits, creates, destroys, renames or dumps character bios.\n"
+                 "Each character name must be unique and will be stripped of excessive whitespace.\n"
+                 "-s/--set   : changes a specified field to a specified value:\n"
+                 "  Fields   : name/race/gender/height/age: limit 64 characters. theme/link: must be viable http(s) url. "
+                 "  appearance/equipment/skills/personality/backstory/interests: limit 1024 characters.\n"
+                 "  Setting 'race' to the same name as a registered character role will fetch the colour.\n"
+                 "-c/--create: creates a new bio with the given name.\n"
+                 "-d/--dump  : creates and uploads a json file of the bio, for backup and offline editing.\n"
+                 "-r/--rename: changes the name by which the bio is referenced to a new one.\n"
+                 "--delete   : deletes the bio."
+                 "Be aware that the total length of the bio must not exceed 6000 characters.",
+             syntax="(name) [-s/--set (field) (value)] [-c/--create] [-d/--dump] [-r/--rename (new name)] [--delete]",
+             category="role_play")
     async def _bio(self, msg):
-        """
-        multipurpose command.
-
-        !bio (name) - print out bio
-        !bio (name) (set) (field) [value] - set a bio value
-        !bio (name) (delete) - delete the bio
-
-        :param msg:
-        :return:
-        """
         gid = str(msg.guild.id)
         self._initialize(gid)
-        try:
-            args = " ".join(shlex.split(msg.clean_content)[1:])
-        except ValueError as e:
-            self.logger.warning("Unable to split {data.content}. {e}")
-            raise CommandSyntaxError(e)
-        except IndexError:
-            raise CommandSyntaxError("Bio name required.")
 
-        t_name = self._sanitise_name(args.lower())
+        parser = RSArgumentParser()
+        parser.add_argument('command')
+        parser.add_argument('name', default=[], nargs="*")
+        parser.add_argument('-s', '--set', default=[], nargs="+")
+        parser.add_argument('-c', '--create', action='store_true')
+        parser.add_argument('-d', '--dump', action='store_true')
+        parser.add_argument('--delete', action='store_true')  # doesn't get a short flag for safety
+        parser.add_argument('-r', '--rename', nargs="+")
 
-        if t_name in self.bios[gid]:
-            await respond(msg, None, embed=self._print_bio(msg.guild, t_name))
+        args = parser.parse_args(shlex.split(msg.clean_content))
+
+        if args['name']:
+            args['name'] = self.Bio._name(' '.join(args['name']))
+            char = args['name'].lower()
         else:
-            raise CommandSyntaxError(f"No such character: {args}.")
+            raise CommandSyntaxError("No bio id given")
 
-    @Command("EditBio",
-             doc="Edits the specified bio field, or creates the bio if it doesn't exist.",
-             syntax="(bio) (field) (value or clear)",
-             category="role_play")
-    async def _editbio(self, msg):
-        gid = str(msg.guild.id)
-        self._initialize(gid)
-        try:
-            args = shlex.split(msg.clean_content)
-        except ValueError as e:
-            self.logger.warning("Unable to split {data.content}. {e}")
-            raise CommandSyntaxError(e)
+        if char not in self.bios[gid] and not args['create']:
+            raise CommandSyntaxError(f'No such character: {args["name"]}')
 
-        if len(args) < 4:
-            raise CommandSyntaxError("Three arguments required.")
-
-        t_name = self._sanitise_name(args[1].lower())
-        if t_name in self.bios[gid]:
-            if self.bios[gid][t_name].get("author", 0) != msg.author.id:
-                raise UserPermissionError("Character belongs to other user.")
-        else:
-            if len(t_name) > 64:
-                raise CommandSyntaxError("Character name too long. Maximum length is 64 characters.")
-            self.bios[gid][t_name] = {
-                "author": msg.author.id,
-                "name": self._sanitise_name(args[1]),
-                "race": "undefined",
-                "gender": "undefined",
-                "appearance": "undefined",
-                "backstory": "undefined"
-            }
-            for f in self.fields:
-                if f not in self.bios[gid][t_name]:
-                    self.bios[gid][t_name][f] = ""
-            await respond(msg, f"**ANALYSIS: created character {self._sanitise_name(args[1])}.**")
-        t_field = args[2].lower()
-        if t_field in self.fields:
-            bio = self.bios[gid][t_name]
-            if args[3].lower() == "clear":
-                if t_field in self.mandatory_fields:
-                    bio[t_field] = "undefined"
+        # manipulate the specified bio
+        if args['set'] or args['create'] or args['delete'] or args['rename'] or args['dump']:
+            # creating a bio with using the given character name
+            if args['create']:
+                if char in self.bios[gid]:
+                    raise CommandSyntaxError(f"Character {args['name']} already exists.")
                 else:
-                    bio[t_field] = ""
-                await respond(msg, f"**AFFIRMATIVE. {t_field.capitalize()} cleared.**")
-            else:
-                t_value = " ".join(args[3:])
-                if t_field in ["race", "gender", "height", "age", "name"]:
-                    if t_field == "name":
-                        t_value = self._sanitise_name(t_value)
-                    if len(t_value) > 64:
-                        raise CommandSyntaxError(f"{t_field.capitalize()} too long. "
-                                                 f"Maximum length is 64 characters.")
-                    bio[t_field] = t_value
-                    await respond(msg, f"**AFFIRMATIVE. {t_field.capitalize()} set.**")
-                else:
-                    if len(t_value) > 1024:
-                        raise CommandSyntaxError(f"{t_field.capitalize()} too long. "
-                                                 f"Maximum length is 1024 characters.")
-                    bio[t_field] = t_value
-                    await respond(msg, f"**AFFIRMATIVE. {t_field.capitalize()} set.**")
-        elif t_field not in self.fields:
-            raise CommandSyntaxError(f"Invalid field. Available fields: {', '.join(self.fields[1:])}.")
-        self.bios.save()
+                    self.bios[gid][char] = self.Bio.blank_bio(msg.author.id, args['name'])
+                    await respond(msg, f"**AFFIRMATIVE. ANALYSIS: Created character {args['name']}.**")
 
-    @Command("DeleteBio",
-             doc="Deletes the specified bio. Requires you to be the author or have Manage Messages permission.",
-             syntax="(bio)",
-             category="role_play")
-    async def _deletebio(self, msg):
-        gid = str(msg.guild.id)
-        self._initialize(gid)
-        try:
-            args = " ".join(shlex.split(msg.clean_content)[1:])
-        except ValueError as e:
-            self.logger.warning("Unable to split {data.content}. {e}")
-            raise CommandSyntaxError(e)
+            if self.bios[gid][char].author != msg.author.id:
+                raise UserPermissionError("Character belongs to another user.")
 
-        if len(args) < 2:
-            raise CommandSyntaxError("Bio name required.")
+            # setting one field of the bio to a given value
+            if args['set']:
+                field, value = args['set'][0], ' '.join(args['set'][1:])
+                try:
+                    self.bios[gid][char].set(field, value)
+                    await respond(msg, f"**AFFIRMATIVE. {field.capitalize()} {'' if value else 're'}set.**")
+                except ValueError as e:
+                    raise CommandSyntaxError(f"Exceeded length of field {field.capitalize()}: {e} characters.")
 
-        t_name = self._sanitise_name(args.lower())
-        if t_name in self.bios[gid]:
-            if self.bios[gid][t_name].get("author", 0) == msg.author.id or \
-                    msg.author.permissions_in(msg.channel).manage_messages or \
-                    msg.author.id in self.config_manager.config.get("bot_maintainers", []):
-                del self.bios[gid][t_name]
-                await respond(msg, f"**AFFIRMATIVE. Character bio {t_name} was deleted.**")
-            else:
-                raise UserPermissionError("Character belongs to other user.")
+            # compiling the bio into a json file for storage and editing
+            if args['dump']:
+                t_bio = asdict(self.bios[gid][char])
+                del t_bio['author']
+                t_bio['fullname'] = t_bio['name']
+                t_bio['name'] = char
+                t_bio = json.dumps(t_bio, indent=2, ensure_ascii=False)
+                async with msg.channel.typing():
+                    await respond(msg, "**AFFIRMATIVE. Completed file upload.**",
+                                  file=File(BytesIO(bytes(t_bio, encoding="utf-8")), filename=char + ".json"))
+
+            # changing the bio key in the storage dict, effectively renaming it
+            if args['rename']:
+                new_name = self.Bio._name(' '.join(args['rename'])).lower()
+                if new_name in self.bios[gid]:
+                    raise UserPermissionError(f"Character {new_name} already exists")
+
+                self.bios[gid][new_name] = self.bios[gid][char]
+                del self.bios[gid][char]
+
+                await respond(msg, f"**AFFIRMATIVE. Character {char} can now be accessed as {new_name}.**")
+                char = new_name
+
+            # deletes the specified bio.
+            if args['delete']:
+                del self.bios[gid][char]
+                await respond(msg, f"**AFFIRMATIVE. Character {char} has been deleted.**")
+
+            self.bios.save()
         else:
-            raise CommandSyntaxError(f"No such character: {t_name}.")
-        self.bios.save()
-
-    @Command("DumpBio",
-             doc="Dumps the specified bio into a JSON file.",
-             syntax="(bio)",
-             category="role_play")
-    async def _dumpbio(self, msg):
-        gid = str(msg.guild.id)
-        self._initialize(gid)
-        try:
-            args = " ".join(shlex.split(msg.clean_content)[1:])
-        except ValueError as e:
-            self.logger.warning("Unable to split {data.content}. {e}")
-            raise CommandSyntaxError(e)
-
-        if len(args) < 2:
-            raise CommandSyntaxError("Bio name required.")
-
-        t_name = self._sanitise_name(args.lower())
-        if t_name in self.bios[gid]:
-            t_bio = self.bios[gid][t_name].copy()
-            del t_bio["author"]
-            t_bio["fullname"] = t_bio["name"]
-            t_bio["name"] = t_name
-            t_bio = json.dumps(t_bio, indent=2, ensure_ascii=False)
-            async with msg.channel.typing():
-                await respond(msg, "**AFFIRMATIVE. Completed file upload.**",
-                              file=File(BytesIO(bytes(t_bio, encoding="utf-8")), filename=t_name + ".json"))
-        else:
-            raise CommandSyntaxError(f"No such character: {args[1]}.")
-
-    @Command("RenameBio",
-             doc="Renames the specified bio to the specified new name. Requires you to be the author.",
-             syntax="(bio) (new name)",
-             category="role_play")
-    async def _renamebio(self, msg):
-        gid = str(msg.guild.id)
-        self._initialize(gid)
-        try:
-            args = shlex.split(msg.clean_content)
-        except ValueError as e:
-            self.logger.warning("Unable to split {data.content}. {e}")
-            raise CommandSyntaxError(e)
-
-        if len(args) < 3:
-            raise CommandSyntaxError("Bio name and new name required.")
-
-        t_name = self._sanitise_name(args[1].lower())
-        new_name = self._sanitise_name(args[2].lower())
-        if t_name in self.bios[gid]:
-            if self.bios[gid][t_name].get("author", 0) != msg.author.id:
-                raise UserPermissionError("Character belongs to other user.")
-        else:
-            raise CommandSyntaxError(f"No such character: {t_name}.")
-        if new_name in self.bios[gid]:
-            raise CommandSyntaxError("Character ID already taken.")
-        self.bios[gid][new_name] = self.bios[gid][t_name]
-        del self.bios[gid][t_name]
-        await respond(msg, f"**AFFIRMATIVE. Character bio {t_name} can now be accessed as {new_name}.**")
+            await respond(msg, None,
+                          embed=self.bios[gid][char].embed(msg.guild, self.plugin_config[gid]['race_roles']))
 
     @Command("UploadBio",
-             doc="Parses a json file to update/create character bios.\n"
-                 "See output of !bio (charname) dump for more details on file formatting.",
-             syntax="(attach the file to the message, no arguments required)",
+             doc="Parses a json file or a json codeblock to update/create character bios.\n"
+                 "See output of ",
+             syntax="(attach file to the message, or put json contents into a code block following the command)",
              category="role_play")
     async def _uploadbio(self, msg):
-        """
-        Takes a file or a code block and parses it as json, checking the field limits.
-        """
         gid = str(msg.guild.id)
         self._initialize(gid)
+
         if msg.attachments:
-            t_file = BytesIO()
-            await msg.attachments[0].save(t_file)
+            # there is a file uploaded with the message, grab and decode it.
+            _file = BytesIO()
+
+            await msg.attachments[0].save(_file)
             try:
-                t_data = decode_json(t_file.getvalue())
+                data = decode_json(_file.getvalue())
             except ValueError as e:
-                self.logger.exception("Could not decode bios.json! ", exc_info=True)
+                self.logger.exception("Could not decode uploaded bio file!", exc_info=True)
                 raise CommandSyntaxError(e)
             except Exception as e:
                 raise CommandSyntaxError(f"Not a valid JSON file: {e}")
         else:
-            args = re.split(r"\s+", msg.content, 1)
+            # no file, let's see if user given us a code block.
+            args = msg.content.split(None, 1)
             if len(args) == 1:
-                raise CommandSyntaxError("File or code block required")
-            t_search = re.search("```.*({.+}).*```", args[1], re.DOTALL)
-            if t_search:
-                try:
-                    t_data = json.loads(t_search.group(1))
-                except ValueError as e:
-                    raise CommandSyntaxError(f"Not a valid JSON string. {e}")
-            else:
-                raise CommandSyntaxError("Not valid JSON code block.")
+                raise CommandSyntaxError("File or code block required.")
 
-        if "name" not in t_data:
+            # This regexp searches for something in a codeblock, inside {} inclusive.
+            # There can be any amount of space between the codeblock ticks and the figure brackets.
+            data = re.search("```.*({.+}).*```", args[1], re.DOTALL)
+
+            if data:
+                try:
+                    data = json.loads(data.group(1))
+                except ValueError as e:
+                    raise CommandSyntaxError(f"Not a valid JSON string: {e}")
+            else:
+                raise CommandSyntaxError("Not a valid JSON code block.")
+
+        if "name" not in data:
             raise CommandSyntaxError("Not a valid character file: No name.")
 
-        t_data["name"] = self._sanitise_name(t_data["name"])
+        name = self.Bio._name(data['name']).lower()
 
-        t_bio = {}
+        # 'fullname' key only exists for users sake and must be dealt with specially
+        try:
+            data['name'] = data['fullname'] or data['name']
+            del data['fullname']
+        except KeyError:
+            pass
 
-        for field in [*self.fields, "fullname"]:  # don't want "fullname" to come up in the list of all possible fields
-            t_field = t_data.get(field, "")
-            if t_field:
-                t_len = len(t_field)
-                if field in ["name", "fullname", "race", "gender", "height", "age"] and t_len > 64:
-                    raise CommandSyntaxError(f"Not a valid character file: field {field} too long (max 64 chars).")
-                elif field in ["link", "theme"] and t_len > 256:
-                    raise CommandSyntaxError(f"Not a valid character file: field {field} too long (max 256 chars).")
-                elif t_len > 1024:
-                    raise CommandSyntaxError(f"Not a valid character file: field {field} too long (max 1024 chars).")
-                t_bio[field] = t_field
+        if name in self.bios[gid] and self.bios[gid].author != msg.author.id:
+            raise UserPermissionError("Character belongs to another user.")
 
-        t_name = t_bio["name"].lower()
-        t_name_storage = t_bio["name"]
-        if "fullname" in t_bio:
-            t_bio["name"] = self._sanitise_name(t_bio["fullname"])
-            del t_bio["fullname"]
-        if t_name in self.bios[gid]:
-            if self.bios[gid][t_name].get("author", 0) != msg.author.id:
-                raise PermissionError("Character belongs to other user.")
-        else:
-            self.bios[gid][t_name] = {
-                "author": msg.author.id,
-                "name": t_bio["name"],
-                "race": "undefined",
-                "gender": "undefined",
-                "appearance": "undefined",
-                "backstory": "undefined"
-            }
-            for f in self.fields:
-                if f not in self.bios[gid][t_name]:
-                    self.bios[gid][t_name][f] = ""
-            await respond(msg, f"**ANALYSIS: created character {t_name_storage}.**")
-            self.bios.save()
-        for field, value in t_bio.items():
-            self.bios[gid][t_name][field] = value
+        new_char = self.Bio.blank_bio(msg.author.id, data['name'])
+
+        # the Bio.set() method includes all the checks for length that we may need, just gotta let it do it's thing.
+        for field, value in data.items():
+            try:
+                new_char.set(field, value)
+            except ValueError as e:
+                raise CommandSyntaxError(f"Exceeded length of field {field.capitalize()}: {e} characters.")
+
+        # just for nicer output
+        old = name in self.bios[gid]
+
+        self.bios[gid][name] = new_char
         self.bios.save()
-        await respond(msg, f"**AFFIRMATIVE. Character {t_name_storage} updated.**")
+
+        await respond(msg, f"**AFFIRMATIVE. Character {new_char.name} was {'updated' if old else 'created'}.**")
 
     @Command("ReloadBios", "ReloadBio",
              doc="Administrative function that reloads the bios from the file.",
@@ -442,56 +459,3 @@ class Roleplay(BasePlugin):
             self.config_manager.save_config()
         if gid not in self.bios:
             self.bios[gid] = {}
-
-    def _print_bio(self, guild, name):
-        gid = str(guild.id)
-        if name in self.bios[gid]:
-            t_embed = Embed(type="rich", colour=16711680)
-            bio = self.bios[gid][name]
-            t_role = find_role(guild, bio["race"])
-
-            t_embed.title = bio["name"]
-            if t_role and t_role.id in self.plugin_config[gid]["race_roles"]:
-                t_embed.colour = t_role.colour
-
-            t_member = guild.get_member(bio["author"])
-            if t_member:
-                t_embed.set_footer(text=f"Character belonging to {t_member.display_name}",
-                                   icon_url=t_member.avatar_url)
-
-            t_s = "```\n"
-            for i in range(1, 5):
-                if bio.get(self.fields[i], ""):
-                    t_s = f"{t_s}{self.fields[i].capitalize().ljust(7)}: {bio[self.fields[i]]}\n"
-            t_s += "```\n"
-            if bio.get("theme", ""):
-                t_s = f"{t_s}[Theme song.]({bio['theme']})\n"
-            if bio.get("link", ""):
-                t_s = f"{t_s}[Extended bio.]({bio['link']})\n"
-
-            if t_member:
-                t_s = f"{t_s}Owner: {t_member.mention}"
-
-            t_embed.description = t_s
-
-            if bio.get("image", ""):
-                t_embed.set_image(url=bio["image"])
-
-            for field in self.fields[8:]:
-                if bio.get(field, ""):
-                    t_embed.add_field(name=field.capitalize(), value=bio[field])
-
-            return t_embed
-        else:
-            return None
-
-    @staticmethod
-    def _sanitise_name(name):
-        # remove leading/trailing whitespace, inner whitespace limited to one character, no newlines
-        # SPECIALISED FUNCTION, meant to handle the empty names
-        name = re.sub(r"^\s+|\s+$|\n|\r", "", name)
-        name = re.sub(r"\s{2,}", " ", name)
-        if name:
-            return name
-        else:
-            raise CommandSyntaxError("Empty name provided.")
