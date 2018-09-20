@@ -5,7 +5,7 @@ import json
 import logging
 from red_star.plugin_manager import BasePlugin
 from concurrent.futures import CancelledError
-from red_star.rs_errors import ConsoleCommandSyntaxError
+from red_star.rs_errors import ConsoleCommandSyntaxError, CommandSyntaxError
 from red_star.rs_utils import RSArgumentParser, is_positive
 from discord import NotFound, Forbidden
 from traceback import format_exception
@@ -13,6 +13,9 @@ from traceback import format_exception
 
 class ConsoleListener(BasePlugin):
     name = "console"
+    version = "0.2"
+    author = "medeor413 (original by GTG3000)"
+    description = "A plugin for allowing bot maintainers to run commands via console. Very beta-quality."
     default_config = {
         "allow_stdout_logging": False,
         "allow_stdout_errors": True
@@ -166,7 +169,10 @@ class ConsoleListener(BasePlugin):
         parser.add_argument("-t", "--type", choices=("null", "bool", "int", "float", "str", "list", "dict", "json"),
                             type=str.lower)
 
-        args = parser.parse_args(args)
+        try:
+            args = parser.parse_args(args)
+        except CommandSyntaxError as e:
+            raise ConsoleCommandSyntaxError from e
 
         type_converters = {
             "null": lambda x: None,

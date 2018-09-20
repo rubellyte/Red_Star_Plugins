@@ -12,6 +12,9 @@ from io import BytesIO
 
 class Roleplay(BasePlugin):
     name = "roleplay"
+    version = "1.0"
+    author = "GTG3000"
+    description = "A plugin that provides helpful functions for roleplaying, including rich dice support and bios."
     fields = ["name", "race", "gender", "height", "age", "theme", "link", "image", "appearance", "equipment", "skills",
               "personality", "backstory", "interests"]
     mandatory_fields = ["name", "race", "gender", "appearance", "backstory"]

@@ -6,6 +6,9 @@ from red_star.rs_errors import CommandSyntaxError
 
 class Levelling(BasePlugin):
     name = "levelling"
+    version = "1.0"
+    author = "GTG3000"
+    description = "A plugin for providing an XP system that awards members XP for messages."
     default_config = {
         "default": {
             "low_cutoff": 75,
