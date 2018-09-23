@@ -15,8 +15,8 @@ class Roleplay(BasePlugin):
     name = "roleplay"
 
     default_config = {
-        "allow_race_requesting": False,
         "default": {
+            "allow_race_requesting": False,
             "race_roles": []
         }
     }
@@ -58,7 +58,7 @@ class Roleplay(BasePlugin):
 
         @classmethod
         def blank_bio(cls, author: int, name: str):
-            _t = dict(zip(cls.fields, ['']*15))
+            _t = dict(zip(cls.fields, [''] * 15))
             for f in cls.mandatory_fields:
                 _t[f] = 'undefined'
 
@@ -68,7 +68,7 @@ class Roleplay(BasePlugin):
             return cls(**_t)
 
         @staticmethod
-        def _name(name: str)->str:
+        def _name(name: str) -> str:
             """
             removes trailing/leading whitespace, limits whitespace between words to one space, removes newlines.
             :param name:
@@ -79,7 +79,7 @@ class Roleplay(BasePlugin):
                 raise CommandSyntaxError('Empty name provided.')
             return _n[:64]
 
-        def embed(self, guild, roles)-> Embed:
+        def embed(self, guild, roles) -> Embed:
             """
             Generates a pretty discord embed of this role.
             :param guild: guild that the bio belongs to, for member and role searching
@@ -100,12 +100,13 @@ class Roleplay(BasePlugin):
                 t_embed.set_footer(text=f"Character belonging to {t_member.display_name}",
                                    icon_url=t_member.avatar_url)
 
-            t_embed.description = "```\n" +\
-              '\n'.join([f"{f.capitalize():<7}: {self.__dict__[f]}" for f in self.fields[2:6] if self.__dict__[f]])\
-              + "```\n" +\
-              (f"[Theme song.]({self.theme})\n" if self.theme else '') + \
-              (f"[Extended bio.]({self.link})\n" if self.link else '') + \
-              (f"Owner: {t_member.mention}" if t_member else '')
+            t_embed.description = "```\n" + \
+                                  '\n'.join([f"{f.capitalize():<7}: {self.__dict__[f]}" for f in self.fields[2:6] if
+                                             self.__dict__[f]]) \
+                                  + "```\n" + \
+                                  (f"[Theme song.]({self.theme})\n" if self.theme else '') + \
+                                  (f"[Extended bio.]({self.link})\n" if self.link else '') + \
+                                  (f"Owner: {t_member.mention}" if t_member else '')
 
             if self.image:
                 t_embed.set_image(url=self.image)
@@ -116,10 +117,23 @@ class Roleplay(BasePlugin):
             return t_embed
 
     async def activate(self):
-        self.bios = self.config_manager.get_plugin_config_file\
+        self.bios = self.config_manager.get_plugin_config_file \
             ("bios.json",
              json_save_args={'default': lambda o: asdict(o), 'indent': 2, 'ensure_ascii': False},
-             json_load_args={'object_hook': lambda o: self.Bio(**o) if {*o} == {*self.Bio.fields} else o})
+             json_load_args={'object_hook': self._load_bio})
+
+    def _load_bio(self, obj: dict):
+        try:
+            return self.Bio(**obj)
+        except TypeError:
+            # gotta check if the object is an incomplete bio, for backwards compatibility reasons.
+            # this is only called once idealy, so we can take a performance hit.
+            obj_set = {*obj}
+            if obj_set.issubset(self.Bio.fields) and len(obj_set) >= 5:
+                return self.Bio(**{**dict(zip(self.Bio.fields, [''] * 15)), **obj})
+            else:
+                return obj
+
 
     @Command("Roll",
              doc="Rolls a specified amount of specified dice with specified bonus and advantage/disadvantage",
@@ -152,19 +166,19 @@ class Roleplay(BasePlugin):
                           file=File(BytesIO(bytes(t_string, encoding="utf-8")), filename=f'ROLL.txt'))
         else:
             if rolls:
-                t_string = f"**ANALYSIS: {msg.author.display_name} has attempted a" \
+                t_string = f"**ANALYSIS: {msg.author.display_name} has attempted a " \
                            f"{' '.join(args['rollstring']).upper()} roll, getting {sum(results)}.\n" \
                            f"ANALYSIS: Rolled dice:** ```\n"
-                if len(rolls[0])+len(t_string) <= 1996:
+                if len(rolls[0]) + len(t_string) <= 1996:
                     for r in rolls:
                         if len(t_string) + len(r) > 1996:
-                            t_string += r[:1993-len(t_string)]+'...'
+                            t_string += r[:1993 - len(t_string)] + '...'
                             break
                         else:
                             t_string += r + '\n'
                     t_string += '```'
                 else:
-                    t_string += rolls[0][:1990-len(t_string)]+'...\n```'
+                    t_string += rolls[0][:1990 - len(t_string)] + '...\n```'
                 await respond(msg, t_string)
             else:
                 await respond(msg, f"**ANALYSIS: expression {' '.join(args['rollstring']).upper()} evaluated. "
@@ -193,29 +207,29 @@ class Roleplay(BasePlugin):
                                [x.name for x in msg.guild.roles if x.id in self.plugin_config[gid]["race_roles"]])
         else:
             args['add'] = [r for r in [find_role(msg.guild, r) for r in args['add']] if r]
-            args['remove'] = [r for r in [find_role(msg.guild, r) for r in args['remove']]if r]
+            args['remove'] = [r for r in [find_role(msg.guild, r) for r in args['remove']] if r]
 
             # for nice output
-            l_add = []
-            l_rem = []
+            added_roles = []
+            removed_roles = []
 
             for role in args['add']:
                 if role.id not in self.plugin_config[gid]["race_roles"]:
-                    l_add.append(role.name)
+                    added_roles.append(role.name)
                     self.plugin_config[gid]["race_roles"].append(role.id)
             for role in args['remove']:
                 if role.id in self.plugin_config[gid]["race_roles"]:
-                    l_rem.append(role.name)
+                    removed_roles.append(role.name)
                     self.plugin_config[gid]["race_roles"].remove(role.id)
 
-            if l_add or l_rem:
-                _s = "**AFFIRMATIVE. ANALYSIS:**\n```diff\n"
-                if l_add:
-                    _s += "Added roles:\n+ " + "\n+ ".join(l_add) + "\n"
-                if l_rem:
-                    _s += "Removed roles:\n- " + "\n- ".join(l_rem) + "\n"
-                _s += "```"
-                await respond(msg, _s)
+            if added_roles or removed_roles:
+                output_str = "**AFFIRMATIVE. ANALYSIS:**\n```diff\n"
+                if added_roles:
+                    output_str += "Added roles:\n+ " + "\n+ ".join(added_roles) + "\n"
+                if removed_roles:
+                    output_str += "Removed roles:\n- " + "\n- ".join(removed_roles) + "\n"
+                output_str += "```"
+                await respond(msg, output_str)
             else:
                 raise CommandSyntaxError
 
@@ -224,9 +238,9 @@ class Roleplay(BasePlugin):
              syntax="(role)",
              category="role_play")
     async def _getracerole(self, msg):
-        if not self.plugin_config.get("allow_race_requesting", False):
-            return
         gid = str(msg.guild.id)
+        if not self.plugin_config[gid].get("allow_race_requesting", False):
+            return
         self._initialize(gid)
         args = msg.content.split(" ", 1)
         preexisting_roles = []
@@ -251,9 +265,9 @@ class Roleplay(BasePlugin):
              doc="Lists all approved race roles.",
              category="role_play")
     async def _listraceroles(self, msg):
-        if not self.plugin_config.get("allow_race_requesting", False):
-            return
         gid = str(msg.guild.id)
+        if not self.plugin_config[gid].get("allow_race_requesting", False):
+            return
         self._initialize(gid)
         await split_output(msg, "**ANALYSIS: Currently approved race roles:**",
                            [x.name for x in msg.guild.roles if x.id in self.plugin_config[gid]["race_roles"]])
@@ -287,12 +301,13 @@ class Roleplay(BasePlugin):
                  "  appearance/equipment/skills/personality/backstory/interests: limit 1024 characters.\n"
                  "  Setting 'race' to the same name as a registered character role will fetch the colour.\n"
                  "-c/--create: creates a new bio with the given name.\n"
-                 "-d/--dump  : creates and uploads a json file of the bio, for backup and offline editing.\n"
+                 "-d/--dump  : creates and uploads a JSON file of the bio, for backup and offline editing.\n"
                  "-r/--rename: changes the name by which the bio is referenced to a new one.\n"
                  "--delete   : deletes the bio."
                  "Be aware that the total length of the bio must not exceed 6000 characters.",
-             syntax="(name) [-s/--set (field) (value)] [-c/--create] [-d/--dump] [-r/--rename (new name)] [--delete]",
-             category="role_play")
+             syntax="(name) [-s/--set (field) [value]] [-c/--create] [-d/--dump] [-r/--rename (new name)] [--delete]",
+             category="role_play",
+             run_anywhere=True)
     async def _bio(self, msg):
         gid = str(msg.guild.id)
         self._initialize(gid)
@@ -312,10 +327,10 @@ class Roleplay(BasePlugin):
             args['name'] = self.Bio._name(' '.join(args['name']))
             char = args['name'].lower()
         else:
-            raise CommandSyntaxError("No bio id given")
+            raise CommandSyntaxError("No bio id given.")
 
         if char not in self.bios[gid] and not args['create']:
-            raise CommandSyntaxError(f'No such character: {args["name"]}')
+            raise CommandSyntaxError(f'No such character: {args["name"]}.')
 
         # manipulate the specified bio
         if args['set'] or args['create'] or args['delete'] or args['rename'] or args['dump']:
@@ -373,9 +388,9 @@ class Roleplay(BasePlugin):
                           embed=self.bios[gid][char].embed(msg.guild, self.plugin_config[gid]['race_roles']))
 
     @Command("UploadBio",
-             doc="Parses a json file or a json codeblock to update/create character bios.\n"
+             doc="Parses a JSON file or a JSON codeblock to update/create character bios.\n"
                  "See output of ",
-             syntax="(attach file to the message, or put json contents into a code block following the command)",
+             syntax="(attach file to the message, or put JSON contents into a code block following the command)",
              category="role_play")
     async def _uploadbio(self, msg):
         gid = str(msg.guild.id)
