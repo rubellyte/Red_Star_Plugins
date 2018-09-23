@@ -13,6 +13,8 @@ from dataclasses import dataclass, asdict
 
 class Roleplay(BasePlugin):
     name = "roleplay"
+    version = "1.0"
+    author = "GTG3000"
 
     default_config = {
         "default": {

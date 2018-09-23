@@ -5,11 +5,13 @@ from red_star.rs_errors import CommandSyntaxError
 from discord import File
 from discord.errors import NotFound
 from io import BytesIO
-import time
 
 
 class DumpChannel(BasePlugin):
     name = "dump_channel"
+    version = "1.0"
+    author = "GTG3000"
+    description = "A plugin for dumping messages in a channel to a text file."
 
     @Command("Dump",
              doc="Dumps the messages between two specified messages into a text file, inclusively.",
@@ -41,7 +43,7 @@ class DumpChannel(BasePlugin):
         if len(args) > 3:
             t_name = args[3]+".txt"
         else:
-            t_name = str(time.time())+".txt"
+            t_name = str(msg.created_at.timestamp())+".txt"
 
         s = "%Y-%m-%d %H:%M:%S"
 
