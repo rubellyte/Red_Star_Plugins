@@ -48,26 +48,26 @@ class Roleplay(BasePlugin):
         lim_64 = ["race", "gender", "height", "age", "name"]
 
         def set(self, field: str, value=None):
-            _f = field.lower()
-            if _f not in self.fields:
+            _field = field.lower()
+            if _field not in self.fields:
                 raise KeyError
             if value:
-                if len(value) > (64 if _f in self.lim_64 else 1024):
-                    raise ValueError('64' if _f in self.lim_64 else '1024')
-                self.__dict__[_f] = self._name(value) if _f == 'name' else value
+                if len(value) > (64 if _field in self.lim_64 else 1024):
+                    raise ValueError('64' if _field in self.lim_64 else '1024')
+                self.__dict__[_field] = self._name(value) if _field == 'name' else value
             else:
-                self.__dict__[_f] = 'undefined' if _f in self.mandatory_fields else ''
+                self.__dict__[_field] = 'undefined' if _field in self.mandatory_fields else ''
 
         @classmethod
         def blank_bio(cls, author: int, name: str):
-            _t = dict(zip(cls.fields, [''] * 15))
-            for f in cls.mandatory_fields:
-                _t[f] = 'undefined'
+            new_bio_dict = dict(zip(cls.fields, [''] * 15))
+            for field in cls.mandatory_fields:
+                new_bio_dict[field] = 'undefined'
 
-            _t['author'] = author
-            _t['name'] = cls._name(name)
+            new_bio_dict['author'] = author
+            new_bio_dict['name'] = cls._name(name)
 
-            return cls(**_t)
+            return cls(**new_bio_dict)
 
         @staticmethod
         def _name(name: str) -> str:
@@ -76,10 +76,10 @@ class Roleplay(BasePlugin):
             :param name:
             :return:
             """
-            _n = re.sub('\s+', ' ', re.sub('^\s+|\s+$|\n|\r', '', name))
-            if not _n:
+            clean = re.sub('\s+', ' ', re.sub('^\s+|\s+$|\n|\r', '', name))
+            if not clean:
                 raise CommandSyntaxError('Empty name provided.')
-            return _n[:64]
+            return clean[:64]
 
         def embed(self, guild, roles) -> Embed:
             """
@@ -118,18 +118,19 @@ class Roleplay(BasePlugin):
 
             return t_embed
 
+        def as_dict(self):
+            return {"__classhint__": "bio", **asdict(self)}
+
     async def activate(self):
         self.bios = self.config_manager.get_plugin_config_file \
             ("bios.json",
-             json_save_args={'default': lambda o: asdict(o), 'indent': 2, 'ensure_ascii': False},
+             json_save_args={'default': lambda o: o.as_dict(), 'indent': 2, 'ensure_ascii': False},
              json_load_args={'object_hook': self._load_bio})
 
     def _load_bio(self, obj: dict):
-        try:
+        if obj.pop('__classhint__', None) == 'bio':
             return self.Bio(**obj)
-        except TypeError:
-            # gotta check if the object is an incomplete bio, for backwards compatibility reasons.
-            # this is only called once idealy, so we can take a performance hit.
+        else:
             obj_set = {*obj}
             if obj_set.issubset(self.Bio.fields) and len(obj_set) >= 5:
                 return self.Bio(**{**dict(zip(self.Bio.fields, [''] * 15)), **obj})
