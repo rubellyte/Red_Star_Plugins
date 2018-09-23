@@ -2,6 +2,7 @@ from red_star.plugin_manager import BasePlugin
 from red_star.rs_utils import respond, find_user, is_positive
 from red_star.command_dispatcher import Command
 from red_star.rs_errors import CommandSyntaxError
+from discord.errors import Forbidden
 
 
 class Levelling(BasePlugin):
@@ -14,11 +15,8 @@ class Levelling(BasePlugin):
             "low_cutoff": 75,
             "xp_min": 1,
             "xp_max": 10,
-            "xp_decay": 10,
-            "xp_decay_every": 86400,
             "skip_missing": False
-        },
-        "poll_every": 3600
+        }
     }
 
     async def activate(self):
@@ -126,8 +124,13 @@ class Levelling(BasePlugin):
             for channel in msg.guild.text_channels:
                 if not self.channel_manager.channel_in_category(msg.guild, "no_xp", channel):
                     await t_msg.edit(content=f"**AFFIRMATIVE. Processing messages in channel {channel}.**")
-                    async for message in channel.history(limit=depth):
-                        self._give_xp(message)
+                    try:
+                        async for message in channel.history(limit=depth):
+                            self._give_xp(message)
+                    except Forbidden:
+                        continue
+
+        self.storage.save()
         await t_msg.delete()
 
     @Command("NukeXP",
