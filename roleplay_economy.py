@@ -12,10 +12,256 @@ from copy import deepcopy
 from time import time
 
 
+class Character:
+    """
+    A wrapper class for interacting with the "database", making it all nice and tidy.
+    Turns self.chars[gid][character] into Character(self, gid, character) which then handles similar duties.
+    This is based around characters because they are the ones with most manipulation being carried out -
+    all the complicated stuff like item overriding is usually done in context of a character.
+
+    properties:
+
+    _parent: the parent instance of RoleplayEconomy
+    _chars: short for _parent.chars[gid]
+    shop: short for _parent.shop_items[gid] (not prefaced with _ because it's useful outside the class)
+    gid: guild ID in string form
+    id: the character ID, string form
+
+    Additionally, the class allows setting/getting of the character database entry fields through Character.field
+    """
+
+    _fields = ['owner', 'name', 'image', 'money', 'inv', 'inv_key', 'fields']
+
+    def __init__(self, parent: "RoleplayEconomy", guild: str, character: str):
+        self._parent = parent
+        # init the guild, to save up on _initialize calls
+        self._parent._initchar(guild)
+        self._parent._inititem(guild)
+        self.gid = guild
+        self._chars = self._parent.chars[guild]
+        self.shop = self._parent.shop_items[guild]
+        # init the character, for same reasons
+        _char = character.lower()
+        self._parent._initbio(self.gid, _char)
+        self.id = _char
+
+    def __getattr__(self, item):
+        if item in self._fields:
+            return self._chars[self.id][item]
+        else:
+            raise AttributeError
+
+    def __setattr__(self, key, value):
+        if key in self._fields:
+            self._chars[self.id][key] = value
+        else:
+            object.__setattr__(self, key, value)
+
+    def get_item(self, query: [int, str], key: bool = False):
+        """
+        Function to find an item in (key) inventory of the character, by index, name or id
+        :param query: index, name or id of the item
+        :param key: whether or not to search in key inventory
+        :return:
+        """
+        try:
+            item = (self.inv_key if key else self.inv)[int(query) - 1]
+        except ValueError:
+            try:
+                item = [i for i in (self.inv_key if key else self.inv) if i['name'] == query or
+                        i['override'].get('name', self.shop[i['name']]['name']).lower() == query].pop()
+            except IndexError:
+                raise CommandSyntaxError(f"No such item: {query}.")
+        return item
+
+    def stack_item(self, item: dict, key: bool = False):
+        """
+        Function to add a given item to the (key) inventory of the character.
+        Ensures same items are stacked, allows taking items through negative counts, adds new items and purges
+        empty stacks.
+        :param item: {'name':'', 'override':{}, 'count': 0}
+        :param key: whether or not to search in key inventory
+        :return:
+        """
+        inv = self.inv_key if key else self.inv
+        for _pos, _item in enumerate(inv):
+            if item['name'] == _item['name'] and item['override'] == _item['override']:
+                inv[_pos]['count'] += item['count']
+                if inv[_pos]['count'] <= 0:
+                    del inv[_pos]
+                return
+        else:
+            if item['count'] > 0:
+                inv.append(item)
+
+    def override_item(self, item: dict):
+        """
+        Function that takes an inventory item {'name': str, 'override': dict, 'count': int},
+        And returns a global item with the overrides applied properly.
+        :param item:
+        :return:
+        """
+        return {
+            **self.shop[item['name']], **item['override'],
+            'fields': [(f, v) for f, v in
+                       list({
+                                **dict(self.shop[item['name']]['fields']),
+                                **dict(item['override'].get('fields', []))
+                            }.items())
+                       if v]
+        }
+
+    def embed(self):
+        """
+        Function that generates a character sheet embed.
+        """
+        t_embed = Embed(type="rich", colour=0xFF0000)
+        t_embed.title = self.name
+
+        # optional fields are only added if they're present.
+        if self.image:
+            t_embed.set_thumbnail(url=self.image)
+
+        # character fields are arbitrary text, in format of [["name", "data"], ...]
+        for (field_name, field_value) in self.fields:
+            t_embed.add_field(name=field_name, value=field_value, inline=False)
+
+        """
+        inventory fields must list up to 32 items, limiting the item names to 24 characters.
+        additionally, any customized items must have an asterisk appended to their name, as well as have their
+         name replaced with the name from the override if necessary.
+        if there is more than one item, the bot also appends the amount, formatted as ×12345 
+
+        the numbers are calculated based on the maximum length of an embed field (1024 symbols)
+
+        the properly formatted item strings are added to a temporary variable, as to not make the code any more 
+        complicated.
+        """
+
+        items = ""
+
+        for item in self.inv_key[:32]:
+            if item['name'] in self.shop:
+                _name = item['override'].get('name')
+                _name = _name[:23] + '*' if _name else self.shop[item['name']]['name'][:24]
+            else:
+                # the verification will not prune items that aren't available any more, for user friendliness.
+                # unfortunately, that means that those items must show up in the inventory SOMEHOW.
+                _name = f"{item['name'][:24]:-^24}"
+            items += f"{_name:<24}×{item['count']:5d}\n" if item['count'] > 1 else f"{_name}\n"
+        if len(self.inv_key) > 32:
+            items += f"And {len(self.inv_key)-32} more..."
+
+        # no need to add an empty inventory.
+        if items:
+            t_embed.add_field(name="Key Items", value=f"```\n{items}```")
+
+        # rinse and repeat for the other inventory.
+
+        items = ""
+
+        for item in self.inv[:32]:
+            if item['name'] in self.shop:
+                _name = item['override'].get('name')
+                _name = _name[:23] + '*' if _name else self.shop[item['name']]['name'][:24]
+            else:
+                _name = f"{item['name'][:24]:-^24}"
+            items += f"{_name:<24}×{item['count']:5d}\n" if item['count'] > 1 else f"{_name}\n"
+        if len(self.inv) > 32:
+            items += f"And {len(self.inv)-32} more..."
+
+        if items:
+            t_embed.add_field(name="Items", value=f"```\n{items}```")
+
+        t_embed.set_footer(text=f"Money: {self.money}")
+
+        return t_embed
+
+
+class Shop:
+    # Class used to generate and store data for a displayed item shop, including:
+
+    user: int  # User that called the shop. No one else is allowed to flip pages :p
+    page: int  # Current page
+    category: str  # Browsed category, if any. Filters the shop items.
+    time: float  # time of last interaction, for timeout purposes.
+
+    _mpage: int  # total amount of pages
+    _gid: str  # guild id
+    _parent: "RoleplayEconomy"  # parent class.
+    _message: Message  # message that the shop is displayed in
+
+    _items: list  # the items to be displayed in the message, generated on init and cached.
+
+    _emoji = "◀🇽▶"
+    _len = 10
+
+    def __init__(self, parent: "RoleplayEconomy", user: int, gid: str, category: str = ""):
+        self._parent = parent
+        self.user = user
+        self.category = category
+
+        self.time = time()
+        self._gid = gid
+        self.page = 0
+
+        # pre-generate the item text lines. This is an expensive-ish operation and it's better to cache it.
+
+        items = [x for x in parent.shop_items[self._gid].values()
+                 if x['inshop'] and (x['category'] == category or not category)]
+
+        if len(items) % 2 == 1:
+            items.append({'name': "", 'buy_price': 0, 'sell_price': 0})
+
+        self._items = [
+            f"{items[i]['name']:^24}{items[i+1]['name']:^24}\n"
+            f"[Buy: {items[i]['buy_price']:5d} Sell: {items[i]['sell_price']:5d}]"
+            f"[Buy: {items[i+1]['buy_price']:5d} Sell: {items[i+1]['sell_price']:5d}]\n"
+            for i in range(0, len(items), 2)]
+
+        # since the shop object is not updated with the shop changes, generate the maximum page number right here.
+
+        self._mpage = len(self._items) // self._len
+
+    async def post(self, msg):
+        # Creates the shop message and adds itself to the parent storage.
+        # Separated from the main init on account of being async (and being more readable this way).
+        self._message = await respond(msg, self.text())
+        await self._message.add_reaction('◀')
+        await self._message.add_reaction('🇽')
+        await self._message.add_reaction('▶')
+        self._parent.shops[self._gid][self._message.id] = self
+
+    def text(self):
+        # Generates the shop text, by gluing header and footer onto a few item strings.
+        text = "```asciidoc\n" \
+               f"{'.🙡Item Shop🙣.':^48}\n{'='*48}\n"
+        text += (('// ' + self.category + '\n\n') if self.category else '\n')
+        text += "\n".join(self._items[self.page * self._len:self.page * self._len + self._len])
+        p = f"[Page {self.page+1} of {self._mpage+1}]"
+        text += f"\n\n{p:^48}```"
+        return text
+
+    async def react(self, reaction: Reaction):
+        if reaction.emoji == '🇽':
+            del self._parent.shops[self._gid][self._message.id]
+            await self._message.delete()
+        elif reaction.emoji == '◀' and self.page > 0:
+            self.page -= 1
+            self.time = time()
+            await self._message.edit(content=self.text())
+        elif reaction.emoji == '▶' and self.page < self._mpage:
+            self.page += 1
+            self.time = time()
+            await self._message.edit(content=self.text())
+
+
 class RoleplayEconomy(BasePlugin):
     name = "roleplay_economy"
     version = "1.0"
     author = "GTG3000"
+    description = "A plugin that provides functionality for keeping (DM-controlled) character sheets and supporting " \
+                  "an item store for in-roleplay purchases."
 
     default_config = {
         "shop_delay": 120
@@ -27,9 +273,9 @@ class RoleplayEconomy(BasePlugin):
         "category": None,
         "image": None,
         "inshop": False,
-        "p_buy": 100,
-        "p_sell": 100,
-        "fields": {}
+        "buy_price": 100,
+        "sell_price": 100,
+        "fields": []
     }
 
     char_base = {
@@ -39,7 +285,7 @@ class RoleplayEconomy(BasePlugin):
         "money": 0,
         "inv": [],
         "inv_key": [],
-        "fields": {}
+        "fields": []
     }
 
     item_template = {
@@ -49,212 +295,20 @@ class RoleplayEconomy(BasePlugin):
     }
 
     shop_template = {
-        "user": 0,          # user ID
-        "page": 0,          # the current page
-        "mpages": 0,        # the max page (pre-calculated because fuck that)
-        "category": "",     # the category of items to display
-        "time": 0,          # time.time() to auto-purge the message (the message ID is the key)
-        "message": None     # the message object, for deletions.
+        "user": 0,       # user ID
+        "page": 0,       # the current page
+        "mpages": 0,     # the max page (pre-calculated because fuck that)
+        "category": "",  # the category of items to display
+        "time": 0,       # time.time() to auto-purge the message (the message ID is the key)
+        "message": None  # the message object, for deletions.
     }
 
-    shops = {}  # self.shops[gid][message_id]: self.Shop
+    shops = {}  # self.shops[gid][message_id]: Shop
 
     # to lower performance impact of disk IO, move the saving of modified character files to the tick event.
     # technically, if the bot is shut down properly, we don't need to save them manually at all - but you never know.
     # not doing the same for items because frankly I don't see any reason for items to be modified so often.
     _save_chars = False
-
-    class Character:
-        _parent = None
-        _chars = None
-        shop = None
-        gid = None
-        id = None
-
-        _fields = ['owner', 'name', 'image', 'money', 'inv', 'inv_key', 'fields']
-
-        def __init__(self, parent, guild: str, character: str):
-            self._parent = parent
-            # init the guild, to save up on _initialize calls
-            self._parent._initchar(guild)
-            self._parent._inititem(guild)
-            self.gid = guild
-            self._chars = self._parent.chars[guild]
-            self.shop = self._parent.shop_items[guild]
-            # init the character, for same reasons
-            _char = character.lower()
-            self._parent._initbio(self.gid, _char)
-            self.id = _char
-
-        def __getattr__(self, item):
-            if item in self._fields:
-                return self._chars[self.id][item]
-            else:
-                raise AttributeError
-
-        def __setattr__(self, key, value):
-            if key in self._fields:
-                self._chars[self.id][key] = value
-            else:
-                object.__setattr__(self, key, value)
-
-        def get_item(self, query: [int, str], key: bool = False):
-            """
-            Function to find an item in (key) inventory of the character, by index, name or id
-            :param query: index, name or id of the item
-            :param key: whether or not to search in key inventory
-            :return:
-            """
-            try:
-                item = (self.inv_key if key else self.inv)[int(query) - 1]
-            except ValueError:
-                try:
-                    item = [i for i in (self.inv_key if key else self.inv) if i['name'] == query or
-                            i['override'].get('name', self.shop[i['name']]['name']).lower() == query].pop()
-                except IndexError:
-                    raise CommandSyntaxError(f"No such item: {query}.")
-            return item
-
-        def stack_item(self, item: dict, key: bool = False):
-            """
-            Function to add a given item to the (key) inventory of the character.
-            Ensures same items are stacked, allows taking items through negative counts, adds new items and purges
-            empty stacks.
-            :param item: {'name':'', 'override':{}, 'count': 0}
-            :param key: whether or not to search in key inventory
-            :return:
-            """
-            inv = self.inv_key if key else self.inv
-            for _pos, _item in enumerate(inv):
-                if item['name'] == _item['name'] and item['override'] == _item['override']:
-                    inv[_pos]['count'] += item['count']
-                    if inv[_pos]['count'] <= 0:
-                        del inv[_pos]
-                    return
-            else:
-                if item['count'] > 0:
-                    inv.append(item)
-
-        def override_item(self, item: dict):
-            return {**self.shop[item['name']], **item['override'],
-                    'fields': [(f, v) for f, v in
-                               list({**dict(self.shop[item['name']]['fields']),
-                                     **dict(item['override'].get('fields', []))}.items())
-                               if v]}
-
-        def embed(self):
-            t_embed = Embed(type="rich", colour=16711680)
-            t_embed.title = self.name
-            if self.image:
-                t_embed.set_thumbnail(url=self.image)
-            for (f_name, f_data) in self.fields:
-                t_embed.add_field(name=f_name, value=f_data, inline=False)
-
-            t_str = ""
-
-            for item in self.inv_key[:32]:
-                if item['name'] in self.shop:
-                    _n = item['override'].get('name')
-                    t_str += _n[:23] + '*' if _n else self.shop[item['name']]['name'][:24]
-                else:
-                    t_str += f"{item['name'][:24]:-^24}"
-                t_str = f"{t_str:<24}×{item['count']:5d}\n" if item['count'] > 1 else f"{t_str}\n"
-            if len(self.inv_key) > 32:
-                t_str += f"And {len(self.inv_key)-32} more..."
-
-            if t_str:
-                t_embed.add_field(name="Key Items", value=f"```\n{t_str}```")
-
-            t_str = ""
-
-            for item in self.inv[:32]:
-                if item['name'] in self.shop:
-                    _n = item['override'].get('name')
-                    t_str += _n[:23] + '*' if _n else self.shop[item['name']]['name'][:24]
-                else:
-                    t_str += f"{item['name'][:24]:-^24}"
-                t_str = f"{t_str:<24}×{item['count']:5d}\n" if item['count'] > 1 else f"{t_str}\n"
-            if len(self.inv) > 32:
-                t_str += f"And {len(self.inv)-32} more..."
-
-            if t_str:
-                t_embed.add_field(name="Items", value=f"```\n{t_str}```")
-
-            t_embed.set_footer(text=f"Money: {self.money}")
-
-            return t_embed
-
-    class Shop:
-        user: int
-        page: int
-        category: str
-        time: float = 0
-
-        _mpage: int
-        _gid: str
-        _parent = None
-        _message: Message
-
-        _items: list
-
-        _emoji = "◀🇽▶"
-        _len = 10
-
-        def __init__(self, parent, user: int, gid: str, category: str=""):
-            self._parent = parent
-            self.user = user
-            self.category = category
-
-            self.time = time()
-            self._gid = gid
-            self.page = 0
-
-            # pregenerate the item text lines. This is an expensive-ish operation and it's better to cache it.
-
-            items = [x for x in parent.shop_items[self._gid].values()
-                     if x['inshop'] and (x['category'] == category or not category)]
-
-            if len(items) % 2 == 1:
-                items.append({'name': "", 'p_buy': 0, 'p_sell': 0})
-
-            self._items = [
-                f"{items[i]['name']:^24}{items[i+1]['name']:^24}\n"
-                f"[Buy: {items[i]['p_buy']:5d} Sell: {items[i]['p_sell']:5d}]"
-                f"[Buy: {items[i+1]['p_buy']:5d} Sell: {items[i+1]['p_sell']:5d}]\n"
-                for i in range(0, len(items), 2)]
-
-
-            self._mpage = len([x for x in parent.shop_items[self._gid].values()
-                               if x['inshop'] and (x['category'] == category or not category)]) // self._len
-
-        async def post(self, msg):
-            self._message = await respond(msg, self.text())
-            await self._message.add_reaction('◀')
-            await self._message.add_reaction('🇽')
-            await self._message.add_reaction('▶')
-            self._parent.shops[self._gid][self._message.id] = self
-
-        def text(self):
-            text = "```asciidoc\n" \
-                   f"{'.🙡Item Shop🙣.':^48}\n{'='*48}\n"
-            text += (('// ' + self.category + '\n\n') if self.category else '\n')
-            text += "\n".join(self._items[self.page*self._len:self.page*self._len+self._len])
-            p = f"[Page {self.page+1} of {self._mpage}]"
-            text += f"\n\n{p:^48}```"
-            return text
-
-        async def react(self, reaction: Reaction):
-            if reaction.emoji == '🇽':
-                del self._parent.shops[self._gid][self._message.id]
-                await self._message.delete()
-            elif reaction.emoji == '◀' and self.page > 0:
-                self.page -= 1
-                self.time = time()
-                await self._message.edit(content=self.text())
-            elif reaction.emoji == '▶' and self.page < self._mpage-1:
-                self.page += 1
-                self.time = time()
-                await self._message.edit(content=self.text())
 
     async def activate(self):
         self.bios = self.plugins['roleplay'].bios if 'roleplay' in self.plugins else None
@@ -262,11 +316,13 @@ class RoleplayEconomy(BasePlugin):
                                                                 json_save_args={"indent": 2, 'ensure_ascii': False})
         self._initchar('default')
         self.shop_items = self.config_manager.get_plugin_config_file("econ_items.json",
-                                                                     json_save_args={"indent": 2,
-                                                                                     'ensure_ascii': False})
+                                                                     json_save_args={
+                                                                         "indent": 2,
+                                                                         'ensure_ascii': False
+                                                                     })
         self._inititem('default')
 
-# Util Functions
+    # Util Functions
 
     def _initchar(self, gid):
         if gid not in self.chars:
@@ -296,9 +352,9 @@ class RoleplayEconomy(BasePlugin):
         :return:
         """
 
-        item_embed = Embed(type="rich", colour=16711680)
+        item_embed = Embed(type="rich", colour=0xFF0000)
         item_embed.title = item['name'] + (" ★" if custom else "")
-        item_embed.description = f"{item['description']}\n\nPrice: {item['p_buy']}/{item['p_sell']}"
+        item_embed.description = f"{item['description']}\n\nPrice: {item['buy_price']}/{item['sell_price']}"
         if item['image']:
             item_embed.set_thumbnail(url=item['image'])
         for (f_name, f_data) in item["fields"]:
@@ -312,7 +368,7 @@ class RoleplayEconomy(BasePlugin):
     @staticmethod
     def _verify_item(item):
 
-        # fields : name, category, description, image, inshop, p_buy, p_sell, fields {}
+        # fields : name, category, description, image, inshop, buy_price, sell_price, fields {}
         # just make sure they're at least correct length/type in general.
         try:
             output = {}
@@ -326,16 +382,16 @@ class RoleplayEconomy(BasePlugin):
                 output["image"] = item["image"]
             if "inshop" in item:
                 output["inshop"] = bool(item["inshop"])
-            if "p_buy" in item:
+            if "buy_price" in item:
                 try:
-                    output["p_buy"] = max(0, int(item["p_buy"]))
+                    output["buy_price"] = max(0, int(item["buy_price"]))
                 except ValueError:
-                    raise CommandSyntaxError(f"Buying price not a valid integer: {item['p_buy']}.")
-            if "p_sell" in item:
+                    raise CommandSyntaxError(f"Buying price not a valid integer: {item['buy_price']}.")
+            if "sell_price" in item:
                 try:
-                    output["p_sell"] = max(0, int(item["p_sell"]))
+                    output["sell_price"] = max(0, int(item["sell_price"]))
                 except ValueError:
-                    raise CommandSyntaxError(f"Selling price not a valid integer: {item['p_sell']}.")
+                    raise CommandSyntaxError(f"Selling price not a valid integer: {item['sell_price']}.")
             if "fields" in item:
                 try:
                     output['fields'] = [[str(name)[:32], str(value)[:1024]] for name, value in item['fields']]
@@ -347,7 +403,7 @@ class RoleplayEconomy(BasePlugin):
 
     def _find_item(self, gid: str, query: str):
         """
-        Function to finda possible item using sequence matcher.
+        Function to find a possible item using sequence matcher.
         Collects possible candidates and returns them too, but don't count on that if it does find a match.
         :param gid:
         :param query:
@@ -418,7 +474,7 @@ class RoleplayEconomy(BasePlugin):
         except (KeyError, TypeError):
             raise CommandSyntaxError('Character must be a dict.')
 
-# Commands
+    # Commands
 
     @Command('Char',
              doc="Prints information about characters and their inventories,"
@@ -463,7 +519,7 @@ class RoleplayEconomy(BasePlugin):
 
         # creating a Character instance automatically inits all relevant data.
         # Raises KeyError if character doesn't exist and can't be created automatically from bios
-        char = self.Character(self, gid, args['char'])
+        char = Character(self, gid, args['char'])
 
         if args['item'] or args['keyitem']:
             # enter the depths of item manipulation.
@@ -478,7 +534,7 @@ class RoleplayEconomy(BasePlugin):
                     await respond(msg, "**AFFIRMATIVE. File upload completed.**",
                                   file=File(BytesIO(bytes(json.dumps(item, indent=2, ensure_ascii=False),
                                                           encoding="utf8")),
-                                            filename=item['name']+'.json'))
+                                            filename=item['name'] + '.json'))
             elif args['give']:
                 # char (name) -i/k (item) -g (name) [amount]
                 # attempts to give an item to another character. We assume that char ids are one word long.
@@ -486,7 +542,7 @@ class RoleplayEconomy(BasePlugin):
                 if args['keyitem']:
                     raise UserPermissionError('Can not give away key items.')
 
-                recipient = self.Character(self, gid, args['give'][0].lower())
+                recipient = Character(self, gid, args['give'][0].lower())
                 try:
                     amount = int(args['give'][1]) if len(args['give']) > 1 else 1
                 except ValueError:
@@ -510,7 +566,7 @@ class RoleplayEconomy(BasePlugin):
                 # exactly what it says on the tin - determine prices, determine amount, prevent selling items with
                 # no price or that you don't have.
                 _item = char.override_item(item)
-                price = _item['p_sell']
+                price = _item['sell_price']
                 name = _item['name']
                 if args['keyitem']:
                     raise UserPermissionError('Can not sell key items.')
@@ -545,7 +601,7 @@ class RoleplayEconomy(BasePlugin):
                 await respond(msg, "**AFFIRMATIVE. File upload completed.**",
                               file=File(BytesIO(bytes(json.dumps(char._chars[char.id], indent=2, ensure_ascii=False),
                                                       encoding="utf8")),
-                                        filename=char.id+'.json'))
+                                        filename=char.id + '.json'))
         elif args['pay']:
             # char (name) -p (name) (amount)
             # transfers money between characters, pretty straightforward.
@@ -556,7 +612,7 @@ class RoleplayEconomy(BasePlugin):
             except ValueError:
                 raise CommandSyntaxError(f"{args['pay'][1]} is not a valid amount.")
 
-            recipient = self.Character(self, gid, args['pay'][0].lower())
+            recipient = Character(self, gid, args['pay'][0].lower())
             recipient.money += amount
             char.money -= amount
             self._save_chars = True
@@ -574,10 +630,10 @@ class RoleplayEconomy(BasePlugin):
 
             item, _ = self._find_item(gid, args['buy'][0])
 
-            if item and char.shop[item]['inshop'] and char.shop[item]['p_buy'] > 0:
-                if char.money > amount * char.shop[item]['p_buy']:
+            if item and char.shop[item]['inshop'] and char.shop[item]['buy_price'] > 0:
+                if char.money > amount * char.shop[item]['buy_price']:
                     char.stack_item({'name': item, 'override': {}, 'count': amount})
-                    char.money -= amount * char.shop[item]['p_buy']
+                    char.money -= amount * char.shop[item]['buy_price']
                     self._save_chars = True
                     await respond(msg, f"**AFFIRMATIVE. {amount} {char.shop[item]['name']} purchased.**")
                 else:
@@ -590,7 +646,7 @@ class RoleplayEconomy(BasePlugin):
 
             item = char.get_item(args['sell'][0])
             _item = char.override_item(item)
-            price = _item['p_sell']
+            price = _item['sell_price']
             name = _item['name']
 
             if price <= 0:
@@ -645,7 +701,7 @@ class RoleplayEconomy(BasePlugin):
         if args['amount'] < 1:
             raise CommandSyntaxError("Please use the Take command to remove items.")
 
-        char = self.Character(self, gid, args['name'])
+        char = Character(self, gid, args['name'])
 
         query = args['item'].lower()
 
@@ -660,9 +716,9 @@ class RoleplayEconomy(BasePlugin):
                                 args['command'].endswith('key'))
                 self._save_chars = True
                 await respond(msg, f"**AFFIRMATIVE. {args['amount']} "
-                                   f"{char._items[query]['name']} given to {char.name}.**")
+                                   f"{char.shop[query]['name']} given to {char.name}.**")
             elif possible:
-                await split_output(msg,  "**ANALYSIS: Perhaps you meant one of these items?**", possible)
+                await split_output(msg, "**ANALYSIS: Perhaps you meant one of these items?**", possible)
             else:
                 await respond(msg, f"**WARNING: Could not find item: {query}.**")
 
@@ -692,7 +748,7 @@ class RoleplayEconomy(BasePlugin):
         if args['amount'] < 1:
             raise CommandSyntaxError("Please use the Give command to add items.")
 
-        char = self.Character(self, gid, args['name'])
+        char = Character(self, gid, args['name'])
         query = args['item'].lower()
         key = args['command'].endswith('key')
 
@@ -708,7 +764,7 @@ class RoleplayEconomy(BasePlugin):
             except IndexError:
                 try:
                     # okay, maybe it'll just be a position? Maybe?
-                    item = (char.inv_key if key else char.inv)[int(query)-1]
+                    item = (char.inv_key if key else char.inv)[int(query) - 1]
                 except ValueError:
                     raise CommandSyntaxError(f"No item with id/name/position {query}.")
             char.stack_item({**item, "count": -args['amount']}, key)
@@ -761,7 +817,7 @@ class RoleplayEconomy(BasePlugin):
             except Exception as e:
                 raise CommandSyntaxError(f"Not a valid JSON block: {e}.\n")
 
-        char = self.Character(self, gid, char.lower())
+        char = Character(self, gid, char.lower())
         try:
             # all items need SOME sort of a base item that they can override from.
             if data['name'] not in char.shop:
@@ -803,7 +859,7 @@ class RoleplayEconomy(BasePlugin):
                                                   encoding="utf8")),
                                     filename=item + '.json'))
         elif possible:
-            await split_output(msg,  "**ANALYSIS: Perhaps you meant one of these items?**", possible)
+            await split_output(msg, "**ANALYSIS: Perhaps you meant one of these items?**", possible)
         else:
             await respond(msg, f"**WARNING: Could not find item: {item}.**")
 
@@ -827,7 +883,7 @@ class RoleplayEconomy(BasePlugin):
         if item:
             await respond(msg, embed=self._generate_item_embed(self.shop_items[gid][item]))
         elif possible:
-            await split_output(msg,  "**ANALYSIS: Perhaps you meant one of these items?**", possible)
+            await split_output(msg, "**ANALYSIS: Perhaps you meant one of these items?**", possible)
         else:
             await respond(msg, f"**WARNING: Could not find item: {item}.**")
 
@@ -905,7 +961,7 @@ class RoleplayEconomy(BasePlugin):
             self.shop_items.save()
             await respond(msg, f"**AFFIRMATIVE. Item {item} deleted.**", embed=self._generate_item_embed(i))
         elif possible:
-            await split_output(msg,  "**ANALYSIS: Perhaps you meant one of these items?**", possible)
+            await split_output(msg, "**ANALYSIS: Perhaps you meant one of these items?**", possible)
         else:
             await respond(msg, f"**WARNING: Could not find item: {item}.**")
 
@@ -967,7 +1023,7 @@ class RoleplayEconomy(BasePlugin):
         self.chars[gid][char] = data
         self._save_chars = True
 
-        data = self.Character(self, gid, char)
+        data = Character(self, gid, char)
 
         await respond(msg, f"**AFFIRMATIVE. Character {data.name} with id {char} {u_str}.**",
                       embed=data.embed())
@@ -1014,7 +1070,8 @@ class RoleplayEconomy(BasePlugin):
              doc="Generates a shop interface for browsing the available items.\n"
                  "Accepts an optional category argument.",
              syntax="[category]",
-             category="role_play_economy")
+             category="role_play_economy",
+             delcall=True)
     async def _shop(self, msg):
         gid = str(msg.guild.id)
 
@@ -1025,7 +1082,12 @@ class RoleplayEconomy(BasePlugin):
 
         if gid not in self.shops:
             self.shops[gid] = {}
-        t_shop = self.Shop(self, msg.author.id, gid, category)
+
+        for mid in [k for k, v in self.shops[gid].items() if v.user == msg.author.id]:
+            await self.shops[gid][mid]._message.delete()
+            del self.shops[gid][mid]
+
+        t_shop = Shop(self, msg.author.id, gid, category)
         await t_shop.post(msg)
 
     @Command("ShopCategories",
@@ -1048,10 +1110,10 @@ class RoleplayEconomy(BasePlugin):
         except IndexError:
             selector = False
 
-        output = sorted([f"{x['name']:^24}: {x['p_buy']}" for x in self.shop_items[gid].values()
+        output = sorted([f"{x['name']:^24}: {x['buy_price']}" for x in self.shop_items[gid].values()
                          if x['inshop'] and (x['category'] == selector or not selector)])
         await split_output(msg, "**ANALYSIS: items in requested category:**" if selector else
-                                "**AFFIRMATIVE. Listing shop items:**",
+                           "**AFFIRMATIVE. Listing shop items:**",
                            output)
 
     @Command("ReloadEconChars",
@@ -1070,13 +1132,13 @@ class RoleplayEconomy(BasePlugin):
         self.shop_items.reload()
         await respond(msg, "**AFFIRMATIVE. Items reloaded.**")
 
-# Events
+    # Events
 
     async def on_reaction_add(self, reaction, user):
         gid = str(reaction.message.guild.id)
         mid = reaction.message.id
 
-        if reaction.emoji in self.Shop._emoji \
+        if reaction.emoji in Shop._emoji \
                 and gid in self.shops \
                 and mid in self.shops[gid] \
                 and self.shops[gid][mid].user == user.id:
