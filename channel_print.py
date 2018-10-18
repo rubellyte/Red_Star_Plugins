@@ -1,11 +1,14 @@
 from red_star.command_dispatcher import Command
 from red_star.plugin_manager import BasePlugin
 from red_star.rs_errors import CommandSyntaxError
-from red_star.rs_utils import respond, JsonFileDict
+from red_star.rs_utils import respond, JsonFileDict, decode_json, split_output
 from urllib.parse import urlparse
 from urllib.request import urlopen
 import mimetypes
-from discord import File
+import re
+import json
+from discord import File, Message
+from io import BytesIO
 
 
 class EmbedDict(dict):
@@ -129,6 +132,7 @@ class ChannelPrint(BasePlugin):
     name = "channel_print"
     version = "1.0"
     author = "GTG3000"
+    description = "A plugin that allows printing of prepared multi-message data."
 
     default_config = {
         "max_filesize": 1024 * 1024 * 8  # max 8 mb
@@ -142,29 +146,48 @@ class ChannelPrint(BasePlugin):
 
     @Command("Print",
              doc="Prints out the specified document from the storage, allowing to dump large amounts of information "
-                 "into a channel, for example for purposes of a rules channel.",
+                 "into a channel, for example for purposes of a rules channel.\n"
+                 "Document can be specified from the saved ones, or uploaded with the command.",
              syntax="(document)",
              perms={"manage_messages"},
              delcall=True)
     async def _print(self, msg):
         gid = str(msg.guild.id)
-        if gid not in self.walls:
-            self.walls[gid] = dict()
-            return
 
-        try:
-            wall = msg.clean_content.split(None, 1)[1]
-        except IndexError:
-            raise CommandSyntaxError
+        if msg.attachments:
+            _file = BytesIO()
 
-        if wall not in self.walls[gid]:
-            raise CommandSyntaxError("No such document.")
+            await msg.attachments[0].save(_file)
+            try:
+                wall = decode_json(_file.getvalue())
+            except ValueError as e:
+                self.logger.exception("Could not decode uploaded document file!", exc_info=True)
+                raise CommandSyntaxError(e)
+            except Exception as e:
+                raise CommandSyntaxError(f"Not a valid JSON file: {e}")
 
-        try:
-            wall = verify_document(self.walls[gid][wall])
-        except ValueError as e:
-            await respond(msg, f"**WARNING: {e}**")
-            return
+            try:
+                wall = verify_document(wall)
+            except ValueError as e:
+                raise CommandSyntaxError(e)
+        else:
+            if gid not in self.walls:
+                self.walls[gid] = dict()
+                return
+
+            try:
+                wall = msg.clean_content.split(None, 1)[1]
+            except IndexError:
+                raise CommandSyntaxError
+
+            if wall not in self.walls[gid]:
+                raise CommandSyntaxError("No such document.")
+
+            try:
+                wall = verify_document(self.walls[gid][wall])
+            except ValueError as e:
+                await respond(msg, f"**WARNING: {e}**")
+                return
 
         for post in wall:
             if isinstance(post, str):
@@ -190,13 +213,102 @@ class ChannelPrint(BasePlugin):
                                   embed=EmbedDict(post['embed']) if 'embed' in post else None,
                                   file=_file)
 
+    @Command("DeletePrint", "PrintDelete",
+             doc="Deletes the specified document.",
+             syntax="(document)",
+             perms={"manage_messages"},)
+    async def _deleteprint(self, msg):
+        gid = str(msg.guild.id)
+
+        try:
+            name = msg.clean_content.split(None, 2)[1].lower()
+            del self.walls[gid][name]
+            await respond(msg, "**AFFIRMATIVE. Document deleted.**")
+        except IndexError:
+            raise CommandSyntaxError("Document name required.")
+        except KeyError:
+            if gid not in self.walls:
+                self.walls[gid] = dict()
+            raise CommandSyntaxError("No document found.")
+
+    @Command("ListPrint", "PrintList",
+             doc="Lists all available documents.",
+             perms={"manage_messages"})
+    async def _listprint(self, msg):
+        gid = str(msg.guild.id)
+
+        if gid not in self.walls:
+            self.walls[gid] = dict()
+
+        await split_output(msg, "**ANALYSIS: Following documents are available:**", self.walls[gid])
+
+    @Command("DumpPrint", "PrintDump",
+             doc="Uploads the specified document in a json file format.",
+             syntax="(document)",
+             perms={"manage_messages"})
+    async def _dumpprint(self, msg):
+        gid = str(msg.guild.id)
+
+        try:
+            name = msg.clean_content.split(None, 2)[1].lower()
+            await respond(msg, "**AFFIRMATIVE. Uploading file.**",
+                          file=File(BytesIO(bytes(json.dumps(self.walls[gid][name], indent=2, ensure_ascii=False),
+                                                  encoding="utf8")), filename=name+'.json'))
+        except IndexError:
+            raise CommandSyntaxError("Document name required.")
+        except KeyError:
+            if gid not in self.walls:
+                self.walls[gid] = dict()
+            raise CommandSyntaxError("No document found.")
+
+    @Command("UploadPrint", "PrintUpload",
+             doc="Allows you to upload a document, in a JSON file format or a JSON code block.",
+             syntax="(document_id) (code block or attached file)",
+             perms={"manage_messages"})
+    async def _uploadprint(self, msg: Message):
+        gid = str(msg.guild.id)
+        if gid not in self.walls:
+            self.walls[gid] = dict()
+
+        try:
+            name = msg.clean_content.split(None, 2)[1].lower()
+        except IndexError:
+            raise CommandSyntaxError("Document name required.")
+
+        if msg.attachments:
+            _file = BytesIO()
+
+            await msg.attachments[0].save(_file)
+            try:
+                data = decode_json(_file.getvalue())
+            except ValueError as e:
+                self.logger.exception("Could not decode uploaded document file!", exc_info=True)
+                raise CommandSyntaxError(e)
+            except Exception as e:
+                raise CommandSyntaxError(f"Not a valid JSON file: {e}")
+        else:
+            try:
+                data = re.match(r"```.*?(?P<json>\[.+]).*?```", msg.clean_content.split(None, 2)[2], re.DOTALL)['json']
+                data = json.loads(data)
+            except IndexError:
+                raise CommandSyntaxError("JSON code block required.")
+            except TypeError:
+                raise CommandSyntaxError("Invalid JSON template. The root must be a list.")
+            except Exception as e:
+                raise CommandSyntaxError(f"Not a valid JSON file: {e}")
+
+        try:
+            data = verify_document(data)
+        except ValueError as e:
+            raise CommandSyntaxError(e)
+
+        self.walls[gid][name] = data
+
+        await respond(msg, f"**AFFIRMATIVE. Document {name} available for printout.**")
+
     @Command("PrintReload",
              doc="Reloads all documents from list. You probably shouldn't be using this too often.",
              bot_maintainers_only=True)
     async def _printreload(self, msg):
         self.walls.reload()
         await respond(msg, "**AFFIRMATIVE. Printout documents reloaded.**")
-
-    # TODO: print pages uploading
-    # TODO: print directly from attachment
-    # TODO: documentation
