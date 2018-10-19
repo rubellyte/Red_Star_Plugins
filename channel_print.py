@@ -1,7 +1,7 @@
 from red_star.command_dispatcher import Command
 from red_star.plugin_manager import BasePlugin
 from red_star.rs_errors import CommandSyntaxError
-from red_star.rs_utils import respond, JsonFileDict, decode_json, split_output
+from red_star.rs_utils import respond, JsonFileDict, decode_json, split_output, verify_embed
 from urllib.parse import urlparse
 from urllib.request import urlopen
 import mimetypes
@@ -9,86 +9,6 @@ import re
 import json
 from discord import File, Message
 from io import BytesIO
-
-
-class EmbedDict(dict):
-    def to_dict(self):
-        return self
-
-
-def verify_embed(embed: dict):
-    """
-    A big ugly function to verify the embed dict as best as we can.
-    Made even uglier by the verbosity I choose to include in the verification.
-    :param embed:
-    :return:
-    """
-    def option(res: dict, key: str, target: dict, scheme: (dict, int, None)):
-        """
-        Verification function.
-        Scheme can be a length for text fields or None for url verification.
-        Otherwise, it may be a dict of fields with either lengths or None for urls.
-        :param res: "result" dict to put the values into
-        :param key: Key to be verified
-        :param target: The "embed" dict to pull values from
-        :param scheme: Verification scheme
-        :return: No returns, the result is added to res parameter. To prevent adding empty fields.
-        """
-        if key in target:
-            if isinstance(scheme, dict):
-                res[key] = {}
-                for field in scheme:
-                    if field not in target[key]:
-                        continue
-                    if scheme[field]:
-                        if len(target[key][field]) > scheme[field]:
-                            raise ValueError(f"{key}[{field}] too long. (limit {scheme[field]})")
-                    else:
-                        url = urlparse(target[key][field])
-                        if not (url.scheme and url.netloc and url.path):
-                            raise ValueError(f"{key}[{field}] invalid url.")
-                    res[key][field] = target[key][field]
-            else:
-                if scheme:
-                    if len(target[key]) > scheme:
-                        raise ValueError(f"{key} too long. (limit {scheme})")
-                else:
-                    url = urlparse(target[key])
-                    if not (url.scheme and url.netloc and url.path):
-                        raise ValueError(f"{key} invalid url.")
-                res[key] = target[key]
-
-    result = {'type': 'rich'}
-    option(result, 'title', embed, 256)
-    option(result, 'description', embed, 2048)
-    option(result, 'url', embed, None)
-    option(result, 'image', embed, {"url": None})
-    option(result, 'thumbnail', embed, {"url": None})
-    option(result, 'footer', embed, {"text": 2048, "icon_url": None})
-    option(result, 'author', embed, {"name": 256, "url": None, "icon_url": None})
-
-    if 'color' in embed:
-        try:
-            result['color'] = int(embed['color'], 0)
-        except TypeError:
-            try:
-                result['color'] = int(embed['color'])
-            except ValueError:
-                raise ValueError("Invalid color value.")
-
-    if 'fields' in embed:
-        result['fields'] = []
-        for i, field in enumerate(embed['fields']):
-            if not isinstance(field['inline'], bool):
-                raise ValueError(f"Field {i+1}, \"inline\" must be true or false.")
-            if len(str(field['name'])) > 256:
-                raise ValueError(f"Field {i+1} \"name\" too long. (Limit 256)")
-            if len(str(field['value'])) > 1024:
-                raise ValueError(f"Field {i+1} \"value\" too long. (Limit 1024)")
-            result['fields'].append({'name': str(field['name']), 'value': str(field['value']),
-                                     'inline': field['inline']})
-
-    return result
 
 
 def verify_document(doc: list):
@@ -128,6 +48,26 @@ def verify_document(doc: list):
     return result
 
 
+def verify_links(doc: list, max_size: int):
+    """
+    A secondary helper functions for the purpose of checking all the links for both existing and being within limit.
+    :param doc: document, a list of messages or dicts
+    :param max_size: maximum size of a file in octets
+    :return:
+    """
+    for i, msg in enumerate(doc):
+        try:
+            _file = urlopen(msg['file'])
+            if int(_file.info()['Content-Length']) > max_size:
+                raise ValueError(f"Message {i+1} attached file too big.")
+        except (TypeError, KeyError):
+            continue
+        except ValueError as e:
+            raise ValueError(e)
+        except Exception as e:
+            raise ValueError(f"Message {i+1} dead attachment link: {e}.")
+
+
 class ChannelPrint(BasePlugin):
     name = "channel_print"
     version = "1.0"
@@ -144,15 +84,18 @@ class ChannelPrint(BasePlugin):
         self.walls = self.config_manager.get_plugin_config_file("walls.json",
                                                                 json_save_args={'indent': 2, 'ensure_ascii': False})
 
-    @Command("Print",
+    @Command("Print", "PrintForce",
              doc="Prints out the specified document from the storage, allowing to dump large amounts of information "
                  "into a channel, for example for purposes of a rules channel.\n"
-                 "Document can be specified from the saved ones, or uploaded with the command.",
+                 "Document can be specified from the saved ones, or uploaded with the command.\n"
+                 "Use \"PrintForce\" alias to force printing despite broken attachment links.",
              syntax="(document)",
              perms={"manage_messages"},
              delcall=True)
     async def _print(self, msg):
         gid = str(msg.guild.id)
+
+        cmd, *args = msg.clean_content.split(None, 1)
 
         if msg.attachments:
             _file = BytesIO()
@@ -165,29 +108,26 @@ class ChannelPrint(BasePlugin):
                 raise CommandSyntaxError(e)
             except Exception as e:
                 raise CommandSyntaxError(f"Not a valid JSON file: {e}")
-
-            try:
-                wall = verify_document(wall)
-            except ValueError as e:
-                raise CommandSyntaxError(e)
         else:
             if gid not in self.walls:
                 self.walls[gid] = dict()
                 return
 
             try:
-                wall = msg.clean_content.split(None, 1)[1]
+                wall = args[0]
             except IndexError:
                 raise CommandSyntaxError
 
             if wall not in self.walls[gid]:
                 raise CommandSyntaxError("No such document.")
+            wall = self.walls[gid][wall]
 
-            try:
-                wall = verify_document(self.walls[gid][wall])
-            except ValueError as e:
-                await respond(msg, f"**WARNING: {e}**")
-                return
+        try:
+            wall = verify_document(wall)
+            if not cmd.lower().endswith("force"):
+                verify_links(wall, self.plugin_config['max_filesize'])
+        except ValueError as e:
+            raise CommandSyntaxError(e)
 
         for post in wall:
             if isinstance(post, str):
@@ -210,7 +150,7 @@ class ChannelPrint(BasePlugin):
                 if _file or 'embed' in post or 'content' in post:
                     await respond(msg,
                                   post.get('content', None),
-                                  embed=EmbedDict(post['embed']) if 'embed' in post else None,
+                                  embed=post['embed'] if 'embed' in post else None,
                                   file=_file)
 
     @Command("DeletePrint", "PrintDelete",
