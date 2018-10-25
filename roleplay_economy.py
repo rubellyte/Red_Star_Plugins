@@ -335,10 +335,10 @@ class RoleplayEconomy(BasePlugin):
     def _initbio(self, gid, name):
         if name not in self.chars[gid]:
             if self.bios and name in self.bios.get(gid, {}):
-                self.chars[gid][name] = self.chars[gid].get('default_char', self.char_base)
-                self.chars[gid][name]['name'] = self.bios[gid][name]['name']
-                self.chars[gid][name]['image'] = self.bios[gid][name]['image']
-                self.chars[gid][name]['owner'] = self.bios[gid][name]['author']
+                self.chars[gid][name] = deepcopy(self.chars[gid].get('default_char', self.char_base))
+                self.chars[gid][name]['name'] = self.bios[gid][name].name
+                self.chars[gid][name]['image'] = self.bios[gid][name].image
+                self.chars[gid][name]['owner'] = self.bios[gid][name].author
             else:
                 raise CommandSyntaxError(f"No such character: {name}")
 
@@ -973,7 +973,7 @@ class RoleplayEconomy(BasePlugin):
     async def _listitems(self, msg):
         gid = str(msg.guild.id)
 
-        items = (f"{i['name']:^24}: {i_id}" for i_id, i in self.shop_items[gid].items())
+        items = (f"{i['name']:<24}: {i_id}" for i_id, i in self.shop_items[gid].items())
 
         await split_output(msg, "**AFFIRMATIVE. Listing off all items:**", items)
 
@@ -1042,12 +1042,12 @@ class RoleplayEconomy(BasePlugin):
         except IndexError:
             raise CommandSyntaxError
 
-        if char in self.chars:
-            char = self.chars.pop(char)
+        if char in self.chars[gid]:
+            char = self.chars[gid].pop(char)
             self._save_chars = True
             await respond(msg, f"**AFFIRMATIVE. Character {char['name']} deleted.**")
         else:
-            possible = [ID for ID in self.chars if SM(None, ID, char).ratio() > 0.5]
+            possible = [ID for ID in self.chars[gid] if SM(None, ID, char).ratio() > 0.5]
             if possible:
                 await split_output(msg, f"**ANALYSIS: No character {char} found. Perhaps you meant one of the "
                                         f"following:**", possible)
@@ -1062,7 +1062,7 @@ class RoleplayEconomy(BasePlugin):
     async def _listchars(self, msg):
         gid = str(msg.guild.id)
 
-        chars = (f"{i['name']:^32}: {i_id}" for i_id, i in self.chars[gid].items())
+        chars = (f"{i['name']:<32}: {i_id}" for i_id, i in self.chars[gid].items())
 
         await split_output(msg, "**AFFIRMATIVE. Listing off all chars:**", chars)
 
@@ -1110,7 +1110,7 @@ class RoleplayEconomy(BasePlugin):
         except IndexError:
             selector = False
 
-        output = sorted([f"{x['name']:^24}: {x['buy_price']}" for x in self.shop_items[gid].values()
+        output = sorted([f"{x['name']:<24}: {x['buy_price']}" for x in self.shop_items[gid].values()
                          if x['inshop'] and (x['category'] == selector or not selector)])
         await split_output(msg, "**ANALYSIS: items in requested category:**" if selector else
                            "**AFFIRMATIVE. Listing shop items:**",
@@ -1143,11 +1143,11 @@ class RoleplayEconomy(BasePlugin):
                 and mid in self.shops[gid] \
                 and self.shops[gid][mid].user == user.id:
             await self.shops[gid][mid].react(reaction)
-        if user.id != self.client.user.id:
-            try:
-                await reaction.message.remove_reaction(reaction.emoji, user)
-            except (Forbidden, NotFound):
-                pass
+            if user.id != self.client.user.id:
+                try:
+                    await reaction.message.remove_reaction(reaction.emoji, user)
+                except (Forbidden, NotFound):
+                    pass
 
     async def on_global_tick(self, *_):
         if self._save_chars:
