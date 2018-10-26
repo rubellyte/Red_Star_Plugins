@@ -210,7 +210,7 @@ class ChannelPrint(BasePlugin):
              doc="Allows you to upload a document, in a JSON file format or a JSON code block.",
              syntax="(document_id) (code block or attached file)",
              perms={"manage_messages"},
-             category="channel_print",)
+             category="channel_print")
     async def _uploadprint(self, msg: Message):
         gid = str(msg.guild.id)
         if gid not in self.walls:
