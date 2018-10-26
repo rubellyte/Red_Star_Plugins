@@ -137,7 +137,6 @@ class Roleplay(BasePlugin):
             else:
                 return obj
 
-
     @Command("Roll",
              doc="Rolls a specified amount of specified dice with specified bonus and advantage/disadvantage",
              syntax="[number]D(die/F)[A/D][+/-bonus]",
@@ -345,7 +344,9 @@ class Roleplay(BasePlugin):
                     self.bios[gid][char] = self.Bio.blank_bio(msg.author.id, args['name'])
                     await respond(msg, f"**AFFIRMATIVE. ANALYSIS: Created character {args['name']}.**")
 
-            if self.bios[gid][char].author != msg.author.id:
+            if not (self.bios[gid][char].author == msg.author.id or args['dump'] or
+                    msg.author.permissions_in(msg.channel).manage_messages or
+                    self.config_manager.is_maintainer(msg.author)):
                 raise UserPermissionError("Character belongs to another user.")
 
             # setting one field of the bio to a given value
