@@ -190,7 +190,7 @@ class ChannelPrint(BasePlugin):
              doc="Uploads the specified document in a json file format.",
              syntax="(document)",
              perms={"manage_messages"},
-             category="channel_print",)
+             category="channel_print")
     async def _dumpprint(self, msg):
         gid = str(msg.guild.id)
 
