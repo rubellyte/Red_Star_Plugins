@@ -177,7 +177,7 @@ class ChannelPrint(BasePlugin):
     @Command("ListPrint", "PrintList",
              doc="Lists all available documents.",
              perms={"manage_messages"},
-             category="channel_print",)
+             category="channel_print")
     async def _listprint(self, msg):
         gid = str(msg.guild.id)
 
