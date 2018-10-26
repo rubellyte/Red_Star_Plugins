@@ -158,7 +158,7 @@ class ChannelPrint(BasePlugin):
              doc="Deletes the specified document.",
              syntax="(document)",
              perms={"manage_messages"},
-             category="channel_print",)
+             category="channel_print")
     async def _deleteprint(self, msg):
         gid = str(msg.guild.id)
 
