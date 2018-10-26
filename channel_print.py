@@ -158,7 +158,7 @@ class ChannelPrint(BasePlugin):
              doc="Deletes the specified document.",
              syntax="(document)",
              perms={"manage_messages"},
-             category="channel_print",)
+             category="channel_print")
     async def _deleteprint(self, msg):
         gid = str(msg.guild.id)
 
@@ -177,7 +177,7 @@ class ChannelPrint(BasePlugin):
     @Command("ListPrint", "PrintList",
              doc="Lists all available documents.",
              perms={"manage_messages"},
-             category="channel_print",)
+             category="channel_print")
     async def _listprint(self, msg):
         gid = str(msg.guild.id)
 
@@ -190,7 +190,7 @@ class ChannelPrint(BasePlugin):
              doc="Uploads the specified document in a json file format.",
              syntax="(document)",
              perms={"manage_messages"},
-             category="channel_print",)
+             category="channel_print")
     async def _dumpprint(self, msg):
         gid = str(msg.guild.id)
 
@@ -210,7 +210,7 @@ class ChannelPrint(BasePlugin):
              doc="Allows you to upload a document, in a JSON file format or a JSON code block.",
              syntax="(document_id) (code block or attached file)",
              perms={"manage_messages"},
-             category="channel_print",)
+             category="channel_print")
     async def _uploadprint(self, msg: Message):
         gid = str(msg.guild.id)
         if gid not in self.walls:
@@ -256,7 +256,7 @@ class ChannelPrint(BasePlugin):
     @Command("PrintReload",
              doc="Reloads all documents from list. You probably shouldn't be using this too often.",
              bot_maintainers_only=True,
-             category="channel_print",)
+             category="channel_print")
     async def _printreload(self, msg):
         self.walls.reload()
         await respond(msg, "**AFFIRMATIVE. Printout documents reloaded.**")
