@@ -165,6 +165,7 @@ class ChannelPrint(BasePlugin):
         try:
             name = msg.clean_content.split(None, 2)[1].lower()
             del self.walls[gid][name]
+            self.walls.save()
             await respond(msg, "**AFFIRMATIVE. Document deleted.**")
         except IndexError:
             raise CommandSyntaxError("Document name required.")
@@ -248,6 +249,7 @@ class ChannelPrint(BasePlugin):
             raise CommandSyntaxError(e)
 
         self.walls[gid][name] = data
+        self.walls.save()
 
         await respond(msg, f"**AFFIRMATIVE. Document {name} available for printout.**")
 
