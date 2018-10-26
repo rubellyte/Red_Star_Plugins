@@ -256,7 +256,7 @@ class ChannelPrint(BasePlugin):
     @Command("PrintReload",
              doc="Reloads all documents from list. You probably shouldn't be using this too often.",
              bot_maintainers_only=True,
-             category="channel_print",)
+             category="channel_print")
     async def _printreload(self, msg):
         self.walls.reload()
         await respond(msg, "**AFFIRMATIVE. Printout documents reloaded.**")
