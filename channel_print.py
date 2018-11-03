@@ -77,6 +77,7 @@ class ChannelPrint(BasePlugin):
     default_config = {
         "max_filesize": 1024 * 1024 * 8  # max 8 mb
     }
+    log_events = {"print_event"}
 
     walls: JsonFileDict
 

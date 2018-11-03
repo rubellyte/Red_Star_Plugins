@@ -17,7 +17,7 @@ class MOTD(BasePlugin):
             "motd_file": "motds.json"
         }
     }
-    channel_types = ["motd"]
+    channel_types = {"motd"}
 
     async def activate(self):
         self.run_timer = True

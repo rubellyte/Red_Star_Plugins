@@ -18,7 +18,7 @@ class Levelling(BasePlugin):
             "skip_missing": False
         }
     }
-    channel_categories = ["no_xp"]
+    channel_categories = {"no_xp"}
 
     async def activate(self):
         self.storage = self.config_manager.get_plugin_config_file("xp.json")
