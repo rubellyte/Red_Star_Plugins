@@ -18,11 +18,10 @@ class Levelling(BasePlugin):
             "skip_missing": False
         }
     }
+    channel_categories = ["no_xp"]
 
     async def activate(self):
         self.storage = self.config_manager.get_plugin_config_file("xp.json")
-        for guild in self.client.guilds:
-            self.channel_manager.register_category(guild, "no_xp")
 
     async def on_message(self, msg):
         if self.channel_manager.channel_in_category(msg.guild, "no_xp", msg.channel):
