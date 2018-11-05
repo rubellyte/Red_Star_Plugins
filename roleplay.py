@@ -50,7 +50,7 @@ class Roleplay(BasePlugin):
         def set(self, field: str, value=None):
             _field = field.lower()
             if _field not in self.fields:
-                raise KeyError
+                raise KeyError(f"{_field} is not a valid field.")
             if value:
                 if len(value) > (64 if _field in self.lim_64 else 1024):
                     raise ValueError('64' if _field in self.lim_64 else '1024')
@@ -461,6 +461,8 @@ class Roleplay(BasePlugin):
                 new_char.set(field, value)
             except ValueError as e:
                 raise CommandSyntaxError(f"Exceeded length of field {field.capitalize()}: {e} characters.")
+            except KeyError:
+                continue
 
         # just for nicer output
         old = name in self.bios[gid]
@@ -477,6 +479,7 @@ class Roleplay(BasePlugin):
     async def _reloadbio(self, msg):
         self.bios.reload()
         await respond(msg, "**AFFIRMATIVE. Bios reloaded from file.**")
+
 
     # util commands
 
