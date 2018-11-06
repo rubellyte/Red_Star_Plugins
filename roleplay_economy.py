@@ -885,6 +885,7 @@ class RoleplayEconomy(BasePlugin):
 
         if item:
             await respond(msg, embed=self._generate_item_embed(self.shop_items[gid][item]))
+        elif possible:
             for split_msg in split_message(f"**ANALYSIS: Perhaps you meant one of these items?**```\n{possible}```"):
                 await respond(msg, split_msg)
         else:
