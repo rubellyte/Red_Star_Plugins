@@ -2,7 +2,7 @@ import re
 import json
 import shlex
 from red_star.rs_errors import CommandSyntaxError, UserPermissionError
-from red_star.rs_utils import respond, find_role, find_user, split_output, decode_json, parse_roll_string, \
+from red_star.rs_utils import respond, find_role, find_user, split_message, decode_json, parse_roll_string, \
     RSArgumentParser
 from red_star.command_dispatcher import Command
 from red_star.plugin_manager import BasePlugin
@@ -122,10 +122,10 @@ class Roleplay(BasePlugin):
             return {"__classhint__": "bio", **asdict(self)}
 
     async def activate(self):
-        self.bios = self.config_manager.get_plugin_config_file \
-            ("bios.json",
-             json_save_args={'default': lambda o: o.as_dict(), 'indent': 2, 'ensure_ascii': False},
-             json_load_args={'object_hook': self._load_bio})
+        save_args = {'default': lambda o: o.as_dict(), 'indent': 2, 'ensure_ascii': False}
+        load_args = {'object_hook': self._load_bio}
+        self.bios = self.config_manager.get_plugin_config_file("bios.json", json_save_args=save_args,
+                                                               json_load_args=load_args)
 
     def _load_bio(self, obj: dict):
         if obj.pop('__classhint__', None) == 'bio':
@@ -157,9 +157,12 @@ class Roleplay(BasePlugin):
         results, rolls = parse_roll_string(' '.join(args['rollstring']))
 
         if args['verbose'] > 1:
-            await split_output(msg, f"**ANALYSIS: {msg.author.display_name} has attempted a "
-                                    f"{' '.join(args['rollstring']).upper()} "
-                                    f"roll, getting {sum(results)}.\nANALYSIS: Rolled dice:**", rolls)
+            roll_args = ' '.join(args["rollstring"]).upper()
+            rolls_str = '\n'.join(rolls)
+            for split_msg in split_message(f"**ANALYSIS: {msg.author.display_name} has attempted"
+                                           f"a {roll_args} roll, getting {sum(results)}.\n"
+                                           f"ANALYSIS: Rolled dice:** ```{rolls_str}```"):
+                await respond(msg, split_msg)
         elif args['verbose'] == 1:
             t_string = f"{' '.join(args['rollstring'])}\n" + "\n\n".join(rolls)
             await respond(msg, f"**ANALYSIS: {msg.author.display_name} has attempted a "
@@ -205,8 +208,9 @@ class Roleplay(BasePlugin):
         args = parser.parse_args(shlex.split(msg.content))
 
         if not (args['add'] or args['remove']):
-            await split_output(msg, "**ANALYSIS: Currently approved race roles:**",
-                               [x.name for x in msg.guild.roles if x.id in self.plugin_config[gid]["race_roles"]])
+            approved_roles = "\n".join(x.name for x in msg.guild.roles if x.id in self.plugin_config[gid]["race_roles"])
+            for split_msg in split_message(f"**ANALYSIS: Currently approved race roles:**```\n{approved_roles}```"):
+                await respond(msg, split_msg)
         else:
             args['add'] = [r for r in [find_role(msg.guild, r) for r in args['add']] if r]
             args['remove'] = [r for r in [find_role(msg.guild, r) for r in args['remove']] if r]
@@ -271,8 +275,9 @@ class Roleplay(BasePlugin):
         if not self.plugin_config[gid].get("allow_race_requesting", False):
             return
         self._initialize(gid)
-        await split_output(msg, "**ANALYSIS: Currently approved race roles:**",
-                           [x.name for x in msg.guild.roles if x.id in self.plugin_config[gid]["race_roles"]])
+        approved_roles = "\n".join(x.name for x in msg.guild.roles if x.id in self.plugin_config[gid]["race_roles"])
+        for split_msg in split_message(f"**ANALYSIS: Currently approved race roles:**```\n{approved_roles}```"):
+            await respond(msg, split_msg)
 
     @Command("ListBios",
              doc="Lists all available bios in the database.",
@@ -285,21 +290,24 @@ class Roleplay(BasePlugin):
         if len(args) > 1:
             owner = find_user(msg.guild, args[1])
             if owner:
-                result = [f"{k[:16]:<16} : {v.name}" for k, v in self.bios[gid].items()
-                          if v.get("author", 0) == owner.id]
-                await split_output(msg, f"**ANALYSIS: User {owner.display_name} has following characters:**",
-                                   result)
+                result = "\n".join(f"{k[:16]:<16} : {v.name}" for k, v in self.bios[gid].items()
+                                   if v.get("author", 0) == owner.id)
+                for split_msg in split_message(f"**ANALYSIS: User {owner.display_name} has following "
+                                               f"characters:**```{result}```"):
+                    await respond(msg, split_msg)
             else:
                 raise CommandSyntaxError("Not a user or user not found.")
         else:
-            await split_output(msg, "**ANALYSIS: Following character bios found:**",
-                               [f"{k[:16]:<16} : {v.name}" for k, v in self.bios[gid].items()])
+            bios = "\n".join(f"{k[:16]:<16} : {v.name}" for k, v in self.bios[gid].items())
+            for split_msg in split_message(f"**ANALYSIS: Following character bios found:**```\n{bios}```"):
+                await respond(msg, split_msg)
 
     @Command("Bio",
              doc="Prints, edits, creates, destroys, renames or dumps character bios.\n"
                  "Each character name must be unique and will be stripped of excessive whitespace.\n"
                  "-s/--set   : changes a specified field to a specified value:\n"
-                 "  Fields   : name/race/gender/height/age: limit 64 characters. theme/link: must be viable http(s) url. "
+                 "  Fields   : name/race/gender/height/age: limit 64 characters."
+                 "theme/link: must be viable http(s) url. "
                  "  appearance/equipment/skills/personality/backstory/interests: limit 1024 characters.\n"
                  "  Setting 'race' to the same name as a registered character role will fetch the colour.\n"
                  "-c/--create: creates a new bio with the given name.\n"

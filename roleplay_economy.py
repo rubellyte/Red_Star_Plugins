@@ -1,10 +1,10 @@
 from red_star.plugin_manager import BasePlugin
 from red_star.command_dispatcher import Command
 from red_star.rs_errors import CommandSyntaxError, UserPermissionError
-from red_star.rs_utils import respond, RSArgumentParser, decode_json, split_output
+from red_star.rs_utils import respond, RSArgumentParser, decode_json, split_message
 from discord import Embed, File, Message, Reaction, Forbidden, NotFound
 from io import BytesIO
-from difflib import SequenceMatcher as SM
+from difflib import SequenceMatcher
 import shlex
 import json
 import re
@@ -416,7 +416,7 @@ class RoleplayEconomy(BasePlugin):
         possible = []
         if query not in _s:
             for key, content in _s.items():
-                match = SM(None, query, content['name'].lower()).ratio()
+                match = SequenceMatcher(None, query, content['name'].lower()).ratio()
                 if match > 0.9:
                     item = key
                     break
@@ -425,7 +425,7 @@ class RoleplayEconomy(BasePlugin):
         else:
             item = query
 
-        return item, possible
+        return item, "\n".join(possible)
 
     def _verify_char(self, char: dict, default: dict):
         try:
@@ -718,7 +718,9 @@ class RoleplayEconomy(BasePlugin):
                 await respond(msg, f"**AFFIRMATIVE. {args['amount']} "
                                    f"{char.shop[query]['name']} given to {char.name}.**")
             elif possible:
-                await split_output(msg, "**ANALYSIS: Perhaps you meant one of these items?**", possible)
+                for split_msg in split_message(f"**ANALYSIS: Perhaps you meant one of these items?**"
+                                               f"```\n{possible}```"):
+                    await respond(msg, split_msg)
             else:
                 await respond(msg, f"**WARNING: Could not find item: {query}.**")
 
@@ -859,7 +861,8 @@ class RoleplayEconomy(BasePlugin):
                                                   encoding="utf8")),
                                     filename=item + '.json'))
         elif possible:
-            await split_output(msg, "**ANALYSIS: Perhaps you meant one of these items?**", possible)
+            for split_msg in split_message(f"**ANALYSIS: Perhaps you meant one of these items?**```\n{possible}```"):
+                await respond(msg, split_msg)
         else:
             await respond(msg, f"**WARNING: Could not find item: {item}.**")
 
@@ -882,8 +885,8 @@ class RoleplayEconomy(BasePlugin):
 
         if item:
             await respond(msg, embed=self._generate_item_embed(self.shop_items[gid][item]))
-        elif possible:
-            await split_output(msg, "**ANALYSIS: Perhaps you meant one of these items?**", possible)
+            for split_msg in split_message(f"**ANALYSIS: Perhaps you meant one of these items?**```\n{possible}```"):
+                await respond(msg, split_msg)
         else:
             await respond(msg, f"**WARNING: Could not find item: {item}.**")
 
@@ -961,7 +964,8 @@ class RoleplayEconomy(BasePlugin):
             self.shop_items.save()
             await respond(msg, f"**AFFIRMATIVE. Item {item} deleted.**", embed=self._generate_item_embed(i))
         elif possible:
-            await split_output(msg, "**ANALYSIS: Perhaps you meant one of these items?**", possible)
+            for split_msg in split_message(f"**ANALYSIS: Perhaps you meant one of these items?**```\n{possible}```"):
+                await respond(msg, split_msg)
         else:
             await respond(msg, f"**WARNING: Could not find item: {item}.**")
 
@@ -973,9 +977,10 @@ class RoleplayEconomy(BasePlugin):
     async def _listitems(self, msg):
         gid = str(msg.guild.id)
 
-        items = (f"{i['name']:<24}: {i_id}" for i_id, i in self.shop_items[gid].items())
+        items = "\n".join(f"{i['name']:<24}: {i_id}" for i_id, i in self.shop_items[gid].items())
 
-        await split_output(msg, "**AFFIRMATIVE. Listing off all items:**", items)
+        for split_msg in split_message(f"**AFFIRMATIVE. Listing off all items:**```\n{items}```"):
+            await respond(msg, split_msg)
 
     @Command("UploadChar",
              doc="Creates or updates character specified with an id.\n"
@@ -1047,10 +1052,11 @@ class RoleplayEconomy(BasePlugin):
             self._save_chars = True
             await respond(msg, f"**AFFIRMATIVE. Character {char['name']} deleted.**")
         else:
-            possible = [ID for ID in self.chars[gid] if SM(None, ID, char).ratio() > 0.5]
+            possible = "\n".join(ID for ID in self.chars[gid] if SequenceMatcher(None, ID, char).ratio() > 0.5)
             if possible:
-                await split_output(msg, f"**ANALYSIS: No character {char} found. Perhaps you meant one of the "
-                                        f"following:**", possible)
+                for split_msg in split_message(f"**ANALYSIS: No character {char} found. Perhaps "
+                                               f"you meant one of the following:**```\n{possible}```"):
+                    await respond(msg, split_msg)
             else:
                 await respond(msg, f"**WARNING: No character {char} found.**")
 
@@ -1062,9 +1068,10 @@ class RoleplayEconomy(BasePlugin):
     async def _listchars(self, msg):
         gid = str(msg.guild.id)
 
-        chars = (f"{i['name']:<32}: {i_id}" for i_id, i in self.chars[gid].items())
+        chars = "\n".join(f"{i['name']:<32}: {i_id}" for i_id, i in self.chars[gid].items())
 
-        await split_output(msg, "**AFFIRMATIVE. Listing off all chars:**", chars)
+        for split_msg in split_message(f"**AFFIRMATIVE. Listing off all chars:**```\n{chars}```"):
+            await respond(msg, split_msg)
 
     @Command("Shop",
              doc="Generates a shop interface for browsing the available items.\n"
@@ -1095,9 +1102,9 @@ class RoleplayEconomy(BasePlugin):
              category="role_play_economy")
     async def _shopcategories(self, msg):
         gid = str(msg.guild.id)
-        await split_output(msg,
-                           "**AFFIRMATIVE. Listing categories:**",
-                           {*[x['category'] for x in self.shop_items[gid].values() if x['category'] and x['inshop']]})
+        categories = "\n".join({x['category'] for x in self.shop_items[gid].values() if x['category'] and x['inshop']})
+        for split_msg in split_message(f"**AFFIRMATIVE. Listing categories:**```\n{categories}```"):
+            await respond(msg, split_msg)
 
     @Command("ShopItems",
              doc="Lists all available shop items.",
@@ -1110,11 +1117,14 @@ class RoleplayEconomy(BasePlugin):
         except IndexError:
             selector = False
 
-        output = sorted([f"{x['name']:<24}: {x['buy_price']}" for x in self.shop_items[gid].values()
-                         if x['inshop'] and (x['category'] == selector or not selector)])
-        await split_output(msg, "**ANALYSIS: items in requested category:**" if selector else
-                           "**AFFIRMATIVE. Listing shop items:**",
-                           output)
+        output = "\n".join(sorted(f"{x['name']:<24}: {x['buy_price']}" for x in self.shop_items[gid].values()
+                                  if x['inshop'] and (x['category'] == selector or not selector)))
+        if selector:
+            final_out = f"**ANALYSIS: Items in requested category:**```\n{output}```"
+        else:
+            final_out = f"**AFFIRMATIVE. Listing shop items:**```\n{output}```"
+        for split_msg in split_message(final_out):
+            await respond(msg, split_msg)
 
     @Command("ReloadEconChars",
              doc="Reloads characters from disk.",

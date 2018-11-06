@@ -1,9 +1,9 @@
 from red_star.command_dispatcher import Command
 from red_star.plugin_manager import BasePlugin
 from red_star.rs_errors import CommandSyntaxError
-from red_star.rs_utils import respond, JsonFileDict, decode_json, split_output, verify_embed
+from red_star.rs_utils import respond, JsonFileDict, decode_json, split_message, verify_embed
 from urllib.parse import urlparse
-from urllib.request import urlopen
+from urllib.request import urlopen, URLError
 import mimetypes
 import re
 import json
@@ -105,11 +105,11 @@ class ChannelPrint(BasePlugin):
             await msg.attachments[0].save(_file)
             try:
                 wall = decode_json(_file.getvalue())
+            except json.JSONDecodeError as e:
+                raise CommandSyntaxError(f"Not a valid JSON file: {e}")
             except ValueError as e:
                 self.logger.exception("Could not decode uploaded document file!", exc_info=True)
                 raise CommandSyntaxError(e)
-            except Exception as e:
-                raise CommandSyntaxError(f"Not a valid JSON file: {e}")
         else:
             if gid not in self.walls:
                 self.walls[gid] = dict()
@@ -143,12 +143,12 @@ class ChannelPrint(BasePlugin):
                             raise ValueError("File too big.")
                         _file = File(_file,
                                      filename="wallfile" + mimetypes.guess_extension(_file.info()['Content-Type']))
-                    except Exception as e:
+                    except (URLError, TypeError, ValueError) as e:
                         self.logger.info(f"Attachment file error in {msg.guild}:\n{e}")
                         await self.plugin_manager.hook_event("on_log_event", msg.guild,
                                                              f"**WARNING: Error occured during printout:**\n{e}",
                                                              log_type="print_event")
-                        _file = None  # we just want to fail quietly, files are finnicky
+                        _file = None  # Just fail silently if the request doesn't work out
                 if _file or 'embed' in post or 'content' in post:
                     await respond(msg,
                                   post.get('content', None),
@@ -184,8 +184,10 @@ class ChannelPrint(BasePlugin):
 
         if gid not in self.walls:
             self.walls[gid] = dict()
-
-        await split_output(msg, "**ANALYSIS: Following documents are available:**", self.walls[gid])
+        walls = "\n".join(self.walls[gid])
+        final_msg = f"**ANALYSIS: Following documents are available:**```\n{walls}```"
+        for split_msg in split_message(final_msg):
+            await respond(msg, split_msg)
 
     @Command("DumpPrint", "PrintDump",
              doc="Uploads the specified document in a json file format.",

@@ -1,6 +1,6 @@
 from red_star.plugin_manager import BasePlugin
 from red_star.command_dispatcher import Command
-from red_star.rs_utils import respond, RSArgumentParser, split_output, find_role
+from red_star.rs_utils import respond, RSArgumentParser, split_message, find_role
 from red_star.rs_errors import CommandSyntaxError, UserPermissionError
 from copy import deepcopy
 import shlex
@@ -43,8 +43,9 @@ class RoleRequest(BasePlugin):
         args = parser.parse_args(shlex.split(msg.content))
 
         if not (args['add'] or args['remove']):
-            await split_output(msg, "**ANALYSIS: Currently approved requestable roles:**",
-                               [x.name for x in msg.guild.roles if x.id in self.plugin_config[gid]["roles"]])
+            role_str = "\n".join(x.name for x in msg.guild.roles if x.id in self.plugin_config[gid]["roles"])
+            for split_msg in split_message(f"**ANALYSIS: Currently approved requestable roles:```\n{role_str}```"):
+                await respond(msg, split_msg)
         else:
             args['add'] = [r for r in [find_role(msg.guild, r) for r in args['add']] if r]
             args['remove'] = [r for r in [find_role(msg.guild, r) for r in args['remove']] if r]

@@ -2,8 +2,7 @@ from red_star.plugin_manager import BasePlugin
 from red_star.rs_utils import respond
 from red_star.command_dispatcher import Command
 from red_star.rs_errors import CommandSyntaxError
-from discord import File
-from discord.errors import NotFound
+from discord import File, NotFound
 from io import BytesIO
 
 
