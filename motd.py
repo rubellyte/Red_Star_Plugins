@@ -2,14 +2,14 @@ import datetime
 import json
 from random import choice
 from red_star.plugin_manager import BasePlugin
-from red_star.rs_errors import CommandSyntaxError, ChannelNotFoundError
-from red_star.rs_utils import respond, get_guild_config
+from red_star.rs_errors import CommandSyntaxError, ChannelNotFoundError, DataCarrier
+from red_star.rs_utils import respond, get_guild_config, RSArgumentParser
 from red_star.command_dispatcher import Command
 
 
 class MOTD(BasePlugin):
     name = "motd"
-    version = "1.2"
+    version = "1.3"
     author = "medeor413"
     description = "A plugin for flexibly displaying messages at date change."
     default_config = {
@@ -24,7 +24,7 @@ class MOTD(BasePlugin):
         self.motds = {}
         self.motds_folder = self.client.storage_dir / "motds"
         self.motds_folder.mkdir(parents=True, exist_ok=True)
-        self.last_run = datetime.datetime.now().day
+        self.last_run = datetime.datetime.utcnow().day
         for guild in self.client.guilds:
             motd_file = get_guild_config(self, str(guild.id), "motd_file")
             if motd_file not in self.motds:
@@ -38,15 +38,11 @@ class MOTD(BasePlugin):
                 except json.decoder.JSONDecodeError:
                     self.logger.error(f"MotD file {motd_file} for guild {guild.name} couldn't be decoded! Skipping...")
                     continue
-        self.valid_months = {
-            "January", "February", "March", "April", "May", "June", "July",
-            "August", "September", "October", "November", "December", "Any"
-        }
-        self.valid_days = {
-            "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "Any",
-            "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16",
-            "17", "18", "19", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "31"
-        }
+        self.valid_months = {"jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec", "any"}
+        self.valid_weekdays = {"mon", "tue", "wed", "thu", "fri", "sat", "sun", "any"}
+        self.valid_days = {str(i) for i in range(1, 32)} | {"any"}
+        self.valid_monthweeks = {"week-1", "week-2", "week-3", "week-4", "week-5", "any"}
+        self.valid_dates = self.valid_months | self.valid_monthweeks | self.valid_weekdays | self.valid_days
 
     async def deactivate(self):
         self.run_timer = False
@@ -54,13 +50,9 @@ class MOTD(BasePlugin):
     async def on_global_tick(self, time, _):
         if time.day != self.last_run:
             self.last_run = time.day
-            await self._display_motd()
+            await self._display_motd(time.date)
 
-    async def _display_motd(self):
-        today = datetime.date.today()
-        month = today.strftime("%B")
-        day = str(today.day)
-        weekday = today.strftime("%A")
+    async def _display_motd(self, date):
         for guild in self.client.guilds:
             try:
                 chan = self.channel_manager.get_channel(guild, "motd")
@@ -68,124 +60,109 @@ class MOTD(BasePlugin):
                 motds = self.motds[motd_path]
             except ChannelNotFoundError:
                 continue
-            holiday_lines = self._get_holiday(motds, month, day, weekday)
-            if holiday_lines:
-                    line = choice(holiday_lines)
-                    try:
-                        line = today.strftime(line)
-                    except ValueError:
-                        pass
-                    await chan.send(line)
-            else:
-                lines = []
-                lines += motds.get("Any", {}).get("Any", [])
-                lines += motds.get("Any", {}).get(day, [])
-                lines += motds.get("Any", {}).get(weekday, [])
-                lines += motds.get(month, {}).get("Any", [])
-                lines += motds.get(month, {}).get(day, [])
-                lines += motds.get(month, {}).get(weekday, [])
-                try:
-                    line = choice(lines)
-                    line = today.strftime(line)
-                except IndexError:
-                    continue
-                except ValueError:
-                    line = choice(lines)
-                await chan.send(line)
+            try:
+                lines = self._get_motds(motds, date)
+            except DataCarrier as dc:
+                lines = dc.data
+            try:
+                line = choice(lines)
+                line = date.strftime(line)
+            except IndexError:
+                continue
+            except ValueError:
+                line = choice(lines)
+            await chan.send(line)
 
-    @staticmethod
-    def _get_holiday(motds, month, day, weekday):
-        holidays = motds.get("holidays", [])
-        if f"{month}/{day}" in holidays:
-            return motds[month][day]
-        elif f"{month}/{weekday}" in holidays:
-            return motds[month][weekday]
-        elif f"{month}/Any" in holidays:
-            return motds[month]["Any"]
-        elif f"Any/{day}" in holidays:
-            return motds["Any"][day]
-        elif f"Any/{weekday}" in holidays:
-            return motds["Any"][weekday]
-        else:
-            return
+    def _get_motds(self, options, date, valid=None):
+        if not valid:
+            valid = (date.strftime("%b").lower(), date.strftime("%a").lower(),
+                     str(date.day), "week-" + str(week_of_month(date)))
+        results = []
+        if options.get("holiday", False):
+            raise DataCarrier(options["options"])
+        for k, v in options.items():
+            if k.lower() in valid:
+                results.extend(self._get_motds(v, date, valid=valid))
+        if "options" in options:
+            results.extend(options["options"])
+        return results
 
     @Command("AddMotD",
-             doc="Adds a MotD message.",
+             doc="Adds a MotD message. Each element of the path must match the date for an MotD to display.\n"
+                 "Use --holiday to declare a holiday; when a holiday MotD list is checked, it will only use MotDs "
+                 "from that specific list.",
              perms={"manage_guild"},
              category="bot_management",
-             syntax="(month/Any) (day/weekday/Any) (message)")
+             syntax="[-h/--holiday] (/path/of/date) (message)")
     async def _addmotd(self, msg):
+        holiday = False
         try:
-            month, day, new_motd = msg.clean_content.split(None, 3)[1:]
+            path, new_motd = msg.clean_content.split(None, 2)[1:]
+            self.logger.error(path)
+            self.logger.error(new_motd)
+            if path in ("-h", "--holiday"):
+                holiday = True
+                path, new_motd = new_motd.split(None, 1)
         except ValueError:
             raise CommandSyntaxError("Not enough arguments.")
-        if month not in self.valid_months or day not in self.valid_days:
-            raise CommandSyntaxError("Month or day is invalid. Please use full names.")
-        try:
-            motd_file = get_guild_config(self, str(msg.guild.id), "motd_file")
-            motds = self.motds[motd_file]
-            motd_file = self.motds_folder / motd_file
-            if month not in motds:
-                motds[month] = {}
-            if day not in motds[month]:
-                motds[month][day] = []
-            motds[month][day].append(new_motd)
-            with motd_file.open("w", encoding="utf8") as fd:
-                json.dump(motds, fd, indent=2, ensure_ascii=False)
-            await respond(msg, f"**ANALYSIS: MotD for {month} {day} added successfully.**")
-        except KeyError:
-            raise CommandSyntaxError("Month or day is invalid. Please use full names.")
-
-    @Command("AddHoliday",
-             doc="Adds a holiday. Holidays do not draw from the \"any-day\" MotD pools.",
-             perms={"manage_guild"},
-             category="bot_management",
-             syntax="(month/Any) (day/weekday/Any)")
-    async def _addholiday(self, msg):
-        try:
-            month, day = msg.clean_content.split(None, 2)[1:]
-        except ValueError:
-            raise CommandSyntaxError
-        if month not in self.valid_months or day not in self.valid_days:
-            raise CommandSyntaxError("Month or day is invalid. Please use full names.")
-        holidaystr = month + "/" + day
         motd_file = get_guild_config(self, str(msg.guild.id), "motd_file")
         motds = self.motds[motd_file]
         motd_file = self.motds_folder / motd_file
-        if holidaystr not in motds["holidays"]:
-            motds["holidays"].append(holidaystr)
-            with motd_file.open("w", encoding="utf8") as fd:
-                json.dump(motds, fd, indent=2, ensure_ascii=False)
-            await respond(msg, f"**ANALYSIS: Holiday {holidaystr} added successfully.**")
-        else:
-            await respond(msg, f"**ANALYSIS: {holidaystr} is already a holiday.**")
+
+        path = [x for x in path.lower().split("/") if x]
+        if not all(x in self.valid_dates for x in path):
+            invalid = ", ".join(x for x in path if x not in self.valid_dates)
+            raise CommandSyntaxError(f"The following path identifiers are invalid: `{invalid}`")
+        motd_path = motds
+        for k in path:
+            motd_path = motd_path.setdefault(k, {})
+        motd_path.setdefault("options", []).append(new_motd)
+        if holiday:
+            motd_path["holiday"] = True
+
+        with motd_file.open("w", encoding="utf8") as fd:
+            json.dump(motds, fd, indent=2, ensure_ascii=False)
+        await respond(msg, f"**ANALYSIS: MotD for {'/'.join(path)} added successfully"
+                           f"{' and set as holiday' if holiday else ''}.**")
 
     @Command("TestMotDs",
              doc="Used for testing MOTD lines.",
              perms={"manage_guild"},
              category="debug",
-             syntax="(month/Any) (day/Any) (weekday/Any)")
+             syntax="[-d/--day number] [-wd/--weekday weekday] [-mw/--monthweek week-x] [-m/--month month]"
+                    "OR [-dt/--dt ISO-format date]")
     async def _testmotd(self, msg):
-        try:
-            month, day, weekday = msg.clean_content.split(None, 3)[1:]
-            if month not in self.valid_months or day not in self.valid_days or weekday not in self.valid_days:
-                raise CommandSyntaxError("One of the arguments is not valid.")
-            month = "" if month == "Any" else month
-            day = "" if day == "Any" else day
-            weekday = "" if weekday == "Any" else weekday
-        except ValueError:
-            raise CommandSyntaxError("Missing arguments.")
+        parser = RSArgumentParser()
+        parser.add_argument("-d",  "--day", default="any")
+        parser.add_argument("-wd", "--weekday", default="any")
+        parser.add_argument("-mw", "--monthweek", default="any")
+        parser.add_argument("-m",  "--month", default="any")
+        parser.add_argument("-dt", "--date", default=None, type=datetime.datetime.fromisoformat)
+        args = parser.parse_args(msg.clean_content.split()[1:])
+        if args.month not in self.valid_months \
+                or args.day not in self.valid_days \
+                or args.weekday not in self.valid_days \
+                or args.monthweek not in self.valid_monthweeks:
+            raise CommandSyntaxError("One of the arguments is not valid.")
         motd_path = get_guild_config(self, str(msg.guild.id), "motd_file")
         motds = self.motds[motd_path]
-        holiday_lines = self._get_holiday(motds, month, day, weekday)
-        if holiday_lines:
-            await respond(msg, "\n".join(holiday_lines))
-        else:
-            lines = []
-            lines += motds.get("Any", {}).get("Any", [])
-            lines += motds.get("Any", {}).get(day, [])
-            lines += motds.get("Any", {}).get(weekday, [])
-            lines += motds.get(month, {}).get("Any", [])
-            lines += motds.get(month, {}).get(day, [])
-            lines += motds.get(month, {}).get(weekday, [])
-            await respond(msg, "\n".join(lines))
+        self.logger.debug([args.day, args.weekday, args.monthweek, args.month, args.date])
+        try:
+            if args.date:
+                lines = self._get_motds(motds, args.date)
+            else:
+                lines = self._get_motds(motds, None, valid=(args.month, args.day, args.weekday, args.monthweek))
+        except DataCarrier as dc:
+            lines = dc.data
+        self.logger.debug(repr(lines))
+        lines = "\n".join(lines)
+        if not lines:
+            lines = "None."
+        await respond(msg, f"```\n{lines}```")
+
+
+def week_of_month(date):
+    first_of_month = date.replace(day=1).weekday()
+    if first_of_month == 6:
+        first_of_month -= 7
+    return (date.day + first_of_month) // 7 + 1
