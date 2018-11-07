@@ -19,12 +19,25 @@ class MOTD(BasePlugin):
     }
     channel_types = {"motd"}
 
+    motds: dict
+    last_run: int
+
+    valid_months = {
+        "January", "February", "March", "April", "May", "June", "July",
+        "August", "September", "October", "November", "December", "Any"
+    }
+
+    valid_days = {
+        "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "Any",
+        "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16",
+        "17", "18", "19", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "31"
+    }
+
     async def activate(self):
-        self.run_timer = True
         self.motds = {}
         self.motds_folder = self.client.storage_dir / "motds"
         self.motds_folder.mkdir(parents=True, exist_ok=True)
-        self.last_run = datetime.datetime.now().day
+        self.last_run = datetime.datetime.utcnow().day
         for guild in self.client.guilds:
             motd_file = get_guild_config(self, str(guild.id), "motd_file")
             if motd_file not in self.motds:
@@ -38,18 +51,6 @@ class MOTD(BasePlugin):
                 except json.decoder.JSONDecodeError:
                     self.logger.error(f"MotD file {motd_file} for guild {guild.name} couldn't be decoded! Skipping...")
                     continue
-        self.valid_months = {
-            "January", "February", "March", "April", "May", "June", "July",
-            "August", "September", "October", "November", "December", "Any"
-        }
-        self.valid_days = {
-            "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "Any",
-            "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16",
-            "17", "18", "19", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "31"
-        }
-
-    async def deactivate(self):
-        self.run_timer = False
 
     async def on_global_tick(self, time, _):
         if time.day != self.last_run:
