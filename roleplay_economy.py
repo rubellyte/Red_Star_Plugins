@@ -1,7 +1,7 @@
 from red_star.plugin_manager import BasePlugin
 from red_star.command_dispatcher import Command
 from red_star.rs_errors import CommandSyntaxError, UserPermissionError
-from red_star.rs_utils import respond, RSArgumentParser, decode_json, split_message
+from red_star.rs_utils import respond, RSArgumentParser, decode_json, group_items
 from discord import Embed, File, Message, Reaction, Forbidden, NotFound
 from io import BytesIO
 from difflib import SequenceMatcher
@@ -425,7 +425,7 @@ class RoleplayEconomy(BasePlugin):
         else:
             item = query
 
-        return item, "\n".join(possible)
+        return item, possible
 
     def _verify_char(self, char: dict, default: dict):
         try:
@@ -718,8 +718,7 @@ class RoleplayEconomy(BasePlugin):
                 await respond(msg, f"**AFFIRMATIVE. {args['amount']} "
                                    f"{char.shop[item]['name']} given to {char.name}.**")
             elif possible:
-                for split_msg in split_message(f"**ANALYSIS: Perhaps you meant one of these items?**"
-                                               f"```\n{possible}```"):
+                for split_msg in group_items(possible, message="**ANALYSIS: Perhaps you meant one of these items?**"):
                     await respond(msg, split_msg)
             else:
                 await respond(msg, f"**WARNING: Could not find item: {query}.**")
@@ -865,7 +864,7 @@ class RoleplayEconomy(BasePlugin):
                                                   encoding="utf8")),
                                     filename=item + '.json'))
         elif possible:
-            for split_msg in split_message(f"**ANALYSIS: Perhaps you meant one of these items?**```\n{possible}```"):
+            for split_msg in group_items(possible, message="**ANALYSIS: Perhaps you meant one of these items?**"):
                 await respond(msg, split_msg)
         else:
             await respond(msg, f"**WARNING: Could not find item: {item}.**")
@@ -890,7 +889,7 @@ class RoleplayEconomy(BasePlugin):
         if item:
             await respond(msg, embed=self._generate_item_embed(self.shop_items[gid][item]))
         elif possible:
-            for split_msg in split_message(f"**ANALYSIS: Perhaps you meant one of these items?**```\n{possible}```"):
+            for split_msg in group_items(possible, message="**ANALYSIS: Perhaps you meant one of these items?**"):
                 await respond(msg, split_msg)
         else:
             await respond(msg, f"**WARNING: Could not find item: {item}.**")
@@ -969,7 +968,7 @@ class RoleplayEconomy(BasePlugin):
             self.shop_items.save()
             await respond(msg, f"**AFFIRMATIVE. Item {item} deleted.**", embed=self._generate_item_embed(i))
         elif possible:
-            for split_msg in split_message(f"**ANALYSIS: Perhaps you meant one of these items?**```\n{possible}```"):
+            for split_msg in group_items(possible, "**ANALYSIS: Perhaps you meant one of these items?**"):
                 await respond(msg, split_msg)
         else:
             await respond(msg, f"**WARNING: Could not find item: {item}.**")
@@ -982,9 +981,8 @@ class RoleplayEconomy(BasePlugin):
     async def _listitems(self, msg):
         gid = str(msg.guild.id)
 
-        items = "\n".join(f"{i['name']:<24}: {i_id}" for i_id, i in self.shop_items[gid].items())
-
-        for split_msg in split_message(f"**AFFIRMATIVE. Listing off all items:**```\n{items}```"):
+        for split_msg in group_items((f"{i['name']:<24}: {i_id}" for i_id, i in self.shop_items[gid].items()),
+                                     message="**AFFIRMATIVE. Listing off all items:**"):
             await respond(msg, split_msg)
 
     @Command("UploadChar",
@@ -1057,10 +1055,10 @@ class RoleplayEconomy(BasePlugin):
             self._save_chars = True
             await respond(msg, f"**AFFIRMATIVE. Character {char['name']} deleted.**")
         else:
-            possible = "\n".join(ID for ID in self.chars[gid] if SequenceMatcher(None, ID, char).ratio() > 0.5)
+            possible = (ID for ID in self.chars[gid] if SequenceMatcher(None, ID, char).ratio() > 0.5)
             if possible:
-                for split_msg in split_message(f"**ANALYSIS: No character {char} found. Perhaps "
-                                               f"you meant one of the following:**```\n{possible}```"):
+                for split_msg in group_items(possible, message=f"**ANALYSIS: No character {char} found. "
+                                                               f"Perhaps you meant one of the following:**"):
                     await respond(msg, split_msg)
             else:
                 await respond(msg, f"**WARNING: No character {char} found.**")
@@ -1073,9 +1071,8 @@ class RoleplayEconomy(BasePlugin):
     async def _listchars(self, msg):
         gid = str(msg.guild.id)
 
-        chars = "\n".join(f"{i['name']:<32}: {i_id}" for i_id, i in self.chars[gid].items())
-
-        for split_msg in split_message(f"**AFFIRMATIVE. Listing off all chars:**```\n{chars}```"):
+        for split_msg in group_items((f"{i['name']:<32}: {i_id}" for i_id, i in self.chars[gid].items()),
+                                     "**AFFIRMATIVE. Listing off all chars:**"):
             await respond(msg, split_msg)
 
     @Command("Shop",
@@ -1107,8 +1104,10 @@ class RoleplayEconomy(BasePlugin):
              category="role_play_economy")
     async def _shopcategories(self, msg):
         gid = str(msg.guild.id)
-        categories = "\n".join({x['category'] for x in self.shop_items[gid].values() if x['category'] and x['inshop']})
-        for split_msg in split_message(f"**AFFIRMATIVE. Listing categories:**```\n{categories}```"):
+
+        categories = {x['category'] for x in self.shop_items[gid].values() if x['category'] and x['inshop']}
+
+        for split_msg in group_items(categories, message="**AFFIRMATIVE. Listing categories:**"):
             await respond(msg, split_msg)
 
     @Command("ShopItems",
@@ -1122,13 +1121,12 @@ class RoleplayEconomy(BasePlugin):
         except IndexError:
             selector = False
 
-        output = "\n".join(sorted(f"{x['name']:<24}: {x['buy_price']}" for x in self.shop_items[gid].values()
-                                  if x['inshop'] and (x['category'] == selector or not selector)))
-        if selector:
-            final_out = f"**ANALYSIS: Items in requested category:**```\n{output}```"
-        else:
-            final_out = f"**AFFIRMATIVE. Listing shop items:**```\n{output}```"
-        for split_msg in split_message(final_out):
+        output = sorted(f"{x['name']:<24}: {x['buy_price']}" for x in self.shop_items[gid].values()
+                        if x['inshop'] and (x['category'] == selector or not selector))
+
+        for split_msg in group_items(output,
+                                     message="**ANALYSIS: Items in requested category:**" if selector else
+                                             "**AFFIRMATIVE. Listing shop items:**"):
             await respond(msg, split_msg)
 
     @Command("ReloadEconChars",
