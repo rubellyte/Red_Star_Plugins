@@ -102,10 +102,10 @@ class Character:
         :return:
         """
         return {
-            **self.shop[item['name']], **item['override'],
+            **self.shop.get(item['name'], self.shop['default_item']), **item['override'],
             'fields': [(f, v) for f, v in
                        list({
-                                **dict(self.shop[item['name']]['fields']),
+                                **dict(self.shop.get(item['name'], self.shop['default_item'])['fields']),
                                 **dict(item['override'].get('fields', []))
                             }.items())
                        if v]
@@ -712,11 +712,11 @@ class RoleplayEconomy(BasePlugin):
         else:
             item, possible = self._find_item(gid, query)
             if item:
-                char.stack_item({"name": query, "override": {}, "count": args['amount']},
+                char.stack_item({"name": item, "override": {}, "count": args['amount']},
                                 args['command'].endswith('key'))
                 self._save_chars = True
                 await respond(msg, f"**AFFIRMATIVE. {args['amount']} "
-                                   f"{char.shop[query]['name']} given to {char.name}.**")
+                                   f"{char.shop[item]['name']} given to {char.name}.**")
             elif possible:
                 for split_msg in split_message(f"**ANALYSIS: Perhaps you meant one of these items?**"
                                                f"```\n{possible}```"):
@@ -762,13 +762,17 @@ class RoleplayEconomy(BasePlugin):
                 # presumably, item refers to one of the items in the characters inventory.
                 # by id or name, possibly overridden.
                 item = [i for i in (char.inv_key if key else char.inv) if i['name'] == query or
-                        i['override'].get('name', char.shop[i['name']]['name']).lower() == query].pop()
+                        i['override'].get('name',
+                                          char.shop.get(i['name'],
+                                                        char.shop['default_item'])['name']).lower() == query].pop()
             except IndexError:
                 try:
                     # okay, maybe it'll just be a position? Maybe?
                     item = (char.inv_key if key else char.inv)[int(query) - 1]
-                except ValueError:
+                except (ValueError, IndexError):
                     raise CommandSyntaxError(f"No item with id/name/position {query}.")
+            except KeyError as e:
+                raise CommandSyntaxError(f"Error parsing key {e}.")
             char.stack_item({**item, "count": -args['amount']}, key)
             self._save_chars = True
 
