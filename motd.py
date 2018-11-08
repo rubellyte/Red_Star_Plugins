@@ -19,8 +19,16 @@ class MOTD(BasePlugin):
     }
     channel_types = {"motd"}
 
+    motds: dict
+    last_run: int
+
+    valid_months = {"jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec", "any"}
+    valid_weekdays = {"mon", "tue", "wed", "thu", "fri", "sat", "sun", "any"}
+    valid_days = {str(i) for i in range(1, 32)} | {"any"}
+    valid_monthweeks = {"week-1", "week-2", "week-3", "week-4", "week-5", "any"}
+    valid_dates = valid_months | valid_monthweeks | valid_weekdays | valid_days
+
     async def activate(self):
-        self.run_timer = True
         self.motds = {}
         self.motds_folder = self.client.storage_dir / "motds"
         self.motds_folder.mkdir(parents=True, exist_ok=True)
@@ -38,14 +46,6 @@ class MOTD(BasePlugin):
                 except json.decoder.JSONDecodeError:
                     self.logger.error(f"MotD file {motd_file} for guild {guild.name} couldn't be decoded! Skipping...")
                     continue
-        self.valid_months = {"jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec", "any"}
-        self.valid_weekdays = {"mon", "tue", "wed", "thu", "fri", "sat", "sun", "any"}
-        self.valid_days = {str(i) for i in range(1, 32)} | {"any"}
-        self.valid_monthweeks = {"week-1", "week-2", "week-3", "week-4", "week-5", "any"}
-        self.valid_dates = self.valid_months | self.valid_monthweeks | self.valid_weekdays | self.valid_days
-
-    async def deactivate(self):
-        self.run_timer = False
 
     async def on_global_tick(self, time, _):
         if time.day != self.last_run:

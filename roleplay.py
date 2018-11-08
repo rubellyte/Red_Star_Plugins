@@ -9,17 +9,21 @@ from red_star.plugin_manager import BasePlugin
 from discord import Embed, File
 from io import BytesIO
 from dataclasses import dataclass, asdict
+from collections import defaultdict
+from copy import deepcopy
 
 
 class Roleplay(BasePlugin):
     name = "roleplay"
-    version = "1.0"
+    version = "1.1"
     author = "GTG3000"
 
     default_config = {
         "default": {
             "allow_race_requesting": False,
-            "race_roles": []
+            "race_roles": [],
+            "pinned_bios": {},
+            "pinned_bios_channel": False
         }
     }
 
@@ -50,7 +54,7 @@ class Roleplay(BasePlugin):
         def set(self, field: str, value=None):
             _field = field.lower()
             if _field not in self.fields:
-                raise KeyError
+                raise KeyError(f"{_field} is not a valid field.")
             if value:
                 if len(value) > (64 if _field in self.lim_64 else 1024):
                     raise ValueError('64' if _field in self.lim_64 else '1024')
@@ -126,6 +130,9 @@ class Roleplay(BasePlugin):
         load_args = {'object_hook': self._load_bio}
         self.bios = self.config_manager.get_plugin_config_file("bios.json", json_save_args=save_args,
                                                                json_load_args=load_args)
+
+        self.bio_msgs = defaultdict(dict)
+        self.bio_chan = {}
 
     def _load_bio(self, obj: dict):
         if obj.pop('__classhint__', None) == 'bio':
@@ -362,6 +369,7 @@ class Roleplay(BasePlugin):
                 field, value = args['set'][0], ' '.join(args['set'][1:])
                 try:
                     self.bios[gid][char].set(field, value)
+                    await self._update_bio_pin(msg.guild, char)
                     await respond(msg, f"**AFFIRMATIVE. {field.capitalize()} {'' if value else 're'}set.**")
                 except ValueError as e:
                     raise CommandSyntaxError(f"Exceeded length of field {field.capitalize()}: {e} characters.")
@@ -386,12 +394,20 @@ class Roleplay(BasePlugin):
                 self.bios[gid][new_name] = self.bios[gid][char]
                 del self.bios[gid][char]
 
+                if char in self.plugin_config[gid]['pinned_bios']:
+                    self.plugin_config[gid]['pinned_bios'][new_name] = self.plugin_config[gid]['pinned_bios'][char]
+                    del self.plugin_config[gid]['pinned_bios'][char]
+
                 await respond(msg, f"**AFFIRMATIVE. Character {char} can now be accessed as {new_name}.**")
                 char = new_name
 
             # deletes the specified bio.
             if args['delete']:
                 del self.bios[gid][char]
+                if char in self.plugin_config[gid]['pinned_bios']:
+                    bio_msg = await msg.guild.get_channel(self.plugin_config[gid]['pinned_bios_channel'])\
+                        .get_message(self.plugin_config[gid]['pinned_bios'][char])
+                    await bio_msg.delete()  # deleting the actual record happens in on_message_delete
                 await respond(msg, f"**AFFIRMATIVE. Character {char} has been deleted.**")
 
             self.bios.save()
@@ -461,12 +477,15 @@ class Roleplay(BasePlugin):
                 new_char.set(field, value)
             except ValueError as e:
                 raise CommandSyntaxError(f"Exceeded length of field {field.capitalize()}: {e} characters.")
+            except KeyError:
+                continue
 
         # just for nicer output
         old = name in self.bios[gid]
 
         self.bios[gid][name] = new_char
         self.bios.save()
+        await self._update_bio_pin(msg.guild, name)
 
         await respond(msg, f"**AFFIRMATIVE. Character {new_char.name} was {'updated' if old else 'created'}.**")
 
@@ -478,11 +497,58 @@ class Roleplay(BasePlugin):
         self.bios.reload()
         await respond(msg, "**AFFIRMATIVE. Bios reloaded from file.**")
 
+    @Command("PinBio",
+             doc="Generates an automatically updated bio post.\n"
+                 "All such messages must be in the same channel, which is set by the first message.\n"
+                 "To unpin a bio, simply delete the message.",
+             syntax="(character)",
+             perms={"manage_messages"},
+             category="role_play")
+    async def _pinbio(self, msg):
+        gid = str(msg.guild.id)
+        g_cfg = self.plugin_config[gid]
+
+        if g_cfg['pinned_bios_channel'].setdefault(gid, msg.channel.id) != msg.channel.id:
+            if g_cfg['pinned_bios']:
+                raise CommandSyntaxError(f"Autopinned bios must all be in channel "
+                                         f"<#{self.plugin_config[gid]['pinned_bios_channel']}>.")
+            else:
+                g_cfg['pinned_bios_channel'] = msg.channel.id
+
+        try:
+            char = self.Bio._name(msg.clean_content.split(None, 1)[1])
+        except IndexError:
+            raise CommandSyntaxError
+
+        if char not in self.bios[gid]:
+            raise CommandSyntaxError(f"No bio with id {char}.")
+
+        if char in g_cfg['pinned_bios']:
+            raise CommandSyntaxError(f"Bio with id {char} is already pinned.")
+
+        message = await respond(msg, None, embed=self.bios[gid][char].embed(msg.guild, g_cfg['race_roles']))
+
+        g_cfg['pinned_bios'][char] = message.id
+
     # util commands
+
+    async def _update_bio_pin(self, guild, char):
+        gid = str(guild.id)
+        g_cfg = self.plugin_config[gid]
+        if char in g_cfg['pinned_bios']:
+            bio_msg = await guild.get_channel(g_cfg['pinned_bios_channel']).get_message(g_cfg['pinned_bios'][char])
+            await bio_msg.edit(embed=self.bios[gid][char].embed(guild, g_cfg['race_roles']))
 
     def _initialize(self, gid):
         if gid not in self.plugin_config:
-            self.plugin_config[gid] = self.default_config["default"].copy()
+            self.plugin_config[gid] = deepcopy(self.default_config["default"])
             self.config_manager.save_config()
         if gid not in self.bios:
             self.bios[gid] = {}
+
+    async def on_message_delete(self, msg):
+        gid = str(msg.guild.id)
+        g_cfg = self.plugin_config[gid]
+        if msg.id in g_cfg['pinned_bios'].values():
+            key = [k for k, v in g_cfg['pinned_bios'].items() if v == msg.id].pop()
+            del g_cfg['pinned_bios'][key]
