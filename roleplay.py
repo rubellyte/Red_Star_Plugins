@@ -548,7 +548,7 @@ class Roleplay(BasePlugin):
 
     async def on_message_delete(self, msg):
         gid = str(msg.guild.id)
-        g_cfg = self.plugin_config[gid]
+        g_cfg = self.plugin_config.setdefault(gid, self.plugin_config['default'].copy())
         if msg.id in g_cfg['pinned_bios'].values():
             key = [k for k, v in g_cfg['pinned_bios'].items() if v == msg.id].pop()
             del g_cfg['pinned_bios'][key]
