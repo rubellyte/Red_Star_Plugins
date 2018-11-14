@@ -466,7 +466,7 @@ class Roleplay(BasePlugin):
         except KeyError:
             pass
 
-        if name in self.bios[gid] and self.bios[gid].author != msg.author.id:
+        if name in self.bios[gid] and self.bios[gid][name].author != msg.author.id:
             raise UserPermissionError("Character belongs to another user.")
 
         new_char = self.Bio.blank_bio(msg.author.id, data['name'])
@@ -503,12 +503,14 @@ class Roleplay(BasePlugin):
                  "To unpin a bio, simply delete the message.",
              syntax="(character)",
              perms={"manage_messages"},
-             category="role_play")
+             category="role_play",
+             run_anywhere=True,
+             delcall=True)
     async def _pinbio(self, msg):
         gid = str(msg.guild.id)
         g_cfg = self.plugin_config[gid]
 
-        if g_cfg['pinned_bios_channel'].setdefault(gid, msg.channel.id) != msg.channel.id:
+        if g_cfg.setdefault('pinned_bios_channel', msg.channel.id) != msg.channel.id:
             if g_cfg['pinned_bios']:
                 raise CommandSyntaxError(f"Autopinned bios must all be in channel "
                                          f"<#{self.plugin_config[gid]['pinned_bios_channel']}>.")
