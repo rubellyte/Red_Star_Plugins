@@ -2,20 +2,18 @@ import re
 import json
 import shlex
 from red_star.rs_errors import CommandSyntaxError, UserPermissionError
-from red_star.rs_utils import respond, find_role, find_user, split_message, decode_json, parse_roll_string, \
-    RSArgumentParser
+from red_star.rs_utils import respond, find_role, find_user, split_message, decode_json, RSArgumentParser
 from red_star.command_dispatcher import Command
 from red_star.plugin_manager import BasePlugin
 from discord import Embed, File
 from io import BytesIO
 from dataclasses import dataclass, asdict
-from collections import defaultdict
 from copy import deepcopy
 
 
 class Roleplay(BasePlugin):
     name = "roleplay"
-    version = "1.1"
+    version = "1.2"
     author = "GTG3000"
 
     default_config = {
@@ -131,9 +129,6 @@ class Roleplay(BasePlugin):
         self.bios = self.config_manager.get_plugin_config_file("bios.json", json_save_args=save_args,
                                                                json_load_args=load_args)
 
-        self.bio_msgs = defaultdict(dict)
-        self.bio_chan = {}
-
     def _load_bio(self, obj: dict):
         if obj.pop('__classhint__', None) == 'bio':
             return self.Bio(**obj)
@@ -143,58 +138,6 @@ class Roleplay(BasePlugin):
                 return self.Bio(**{**dict(zip(self.Bio.fields, [''] * 15)), **obj})
             else:
                 return obj
-
-    @Command("Roll",
-             doc="Rolls a specified amount of specified dice with specified bonus and advantage/disadvantage",
-             syntax="[number]D(die/F)[A/D][+/-bonus]",
-             category="role_play",
-             run_anywhere=True)
-    async def _roll(self, msg):
-        args = msg.content.split()
-        if len(args) < 2:
-            raise CommandSyntaxError("Requires one argument.")
-
-        parser = RSArgumentParser()
-
-        parser.add_argument('command')
-        parser.add_argument('rollstring', nargs='+')
-        parser.add_argument('-v', '--verbose', action='count', default=0)
-        args = parser.parse_args(args)
-
-        results, rolls = parse_roll_string(' '.join(args['rollstring']))
-
-        if args['verbose'] > 1:
-            roll_args = ' '.join(args["rollstring"]).upper()
-            rolls_str = '\n'.join(rolls)
-            for split_msg in split_message(f"**ANALYSIS: {msg.author.display_name} has attempted"
-                                           f"a {roll_args} roll, getting {sum(results)}.\n"
-                                           f"ANALYSIS: Rolled dice:** ```{rolls_str}```"):
-                await respond(msg, split_msg)
-        elif args['verbose'] == 1:
-            t_string = f"{' '.join(args['rollstring'])}\n" + "\n\n".join(rolls)
-            await respond(msg, f"**ANALYSIS: {msg.author.display_name} has attempted a "
-                               f"{' '.join(args['rollstring']).upper()} roll, getting {sum(results)}.\n"
-                               f"ANALYSIS: Rolled dice:**\n",
-                          file=File(BytesIO(bytes(t_string, encoding="utf-8")), filename=f'ROLL.txt'))
-        else:
-            if rolls:
-                t_string = f"**ANALYSIS: {msg.author.display_name} has attempted a " \
-                           f"{' '.join(args['rollstring']).upper()} roll, getting {sum(results)}.\n" \
-                           f"ANALYSIS: Rolled dice:** ```\n"
-                if len(rolls[0]) + len(t_string) <= 1996:
-                    for r in rolls:
-                        if len(t_string) + len(r) > 1996:
-                            t_string += r[:1993 - len(t_string)] + '...'
-                            break
-                        else:
-                            t_string += r + '\n'
-                    t_string += '```'
-                else:
-                    t_string += rolls[0][:1990 - len(t_string)] + '...\n```'
-                await respond(msg, t_string)
-            else:
-                await respond(msg, f"**ANALYSIS: expression {' '.join(args['rollstring']).upper()} evaluated. "
-                                   f"Result: {results}**")
 
     @Command("RaceRole",
              doc="-a/--add   : Adds specified roles to the list of allowed race roles.\n"
