@@ -1151,9 +1151,10 @@ class RoleplayEconomy(BasePlugin):
         gid = str(reaction.message.guild.id)
         mid = reaction.message.id
 
-        if reaction.emoji in Shop._emoji \
-                and gid in self.shops \
+        if gid in self.shops \
                 and mid in self.shops[gid] \
+                and isinstance(reaction.emoji, str) \
+                and reaction.emoji in Shop._emoji \
                 and self.shops[gid][mid].user == user.id:
             await self.shops[gid][mid].react(reaction)
             if user.id != self.client.user.id:

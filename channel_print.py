@@ -93,6 +93,7 @@ class ChannelPrint(BasePlugin):
              syntax="(document)",
              perms={"manage_messages"},
              category="channel_print",
+             run_anywhere=True,
              delcall=True)
     async def _print(self, msg):
         gid = str(msg.guild.id)
