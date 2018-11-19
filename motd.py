@@ -50,9 +50,9 @@ class MOTD(BasePlugin):
     async def on_global_tick(self, time, _):
         if time.day != self.last_run:
             self.last_run = time.day
-            await self._display_motd(time.date)
+            await self._display_motd(time.date())
 
-    async def _display_motd(self, date):
+    async def _display_motd(self, date: datetime.datetime):
         for guild in self.client.guilds:
             try:
                 chan = self.channel_manager.get_channel(guild, "motd")
@@ -73,7 +73,7 @@ class MOTD(BasePlugin):
                 line = choice(lines)
             await chan.send(line)
 
-    def _get_motds(self, options, date, valid=None):
+    def _get_motds(self, options, date:datetime.datetime, valid=None):
         if not valid:
             valid = (date.strftime("%b").lower(), date.strftime("%a").lower(),
                      str(date.day), "week-" + str(week_of_month(date)))
@@ -98,8 +98,7 @@ class MOTD(BasePlugin):
         holiday = False
         try:
             path, new_motd = msg.clean_content.split(None, 2)[1:]
-            self.logger.error(path)
-            self.logger.error(new_motd)
+            self.logger.debug(f"New MOTD for {path}: {new_motd}")
             if path in ("-h", "--holiday"):
                 holiday = True
                 path, new_motd = new_motd.split(None, 1)
