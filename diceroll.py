@@ -58,7 +58,7 @@ def parse_roll(roll_string: str):
                     ops.append(token)
                     unary_minus_flag = True
                 elif token == ')':
-                    while ops and ops[-1]!= '(':
+                    while ops and ops[-1] != '(':
                         polish.append(ops.pop())
                     if ops:
                         ops.pop()
