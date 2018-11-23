@@ -241,7 +241,7 @@ class Roleplay(BasePlugin):
             owner = find_user(msg.guild, args[1])
             if owner:
                 result = "\n".join(f"{k[:16]:<16} : {v.name}" for k, v in self.bios[gid].items()
-                                   if v.get("author", 0) == owner.id)
+                                   if v.author == owner.id)
                 for split_msg in split_message(f"**ANALYSIS: User {owner.display_name} has following "
                                                f"characters:**```{result}```"):
                     await respond(msg, split_msg)

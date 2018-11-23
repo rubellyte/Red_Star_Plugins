@@ -40,44 +40,42 @@ def parse_roll(roll_string: str):
 
         for token in tokens:
             try:
-                polish.append(int(token))
+                try:
+                    val = int(token)
+                except ValueError:
+                    val = float(token)
+
                 if new_expr_flag:
                     polish.extend(ops[::-1])
                     ops = []
+
+                polish.append(val)
                 unary_minus_flag = False
                 new_expr_flag = True
             except ValueError:
-                try:
-                    polish.append(float(token))
-                    if new_expr_flag:
-                        polish.extend(ops[::-1])
-                        ops = []
+                new_expr_flag = False
+                if token == '(':
+                    ops.append(token)
+                    unary_minus_flag = True
+                elif token == ')':
+                    while ops and ops[-1] != '(':
+                        polish.append(ops.pop())
+                    if ops:
+                        ops.pop()
                     unary_minus_flag = False
-                    new_expr_flag = True
-                except ValueError:
-                    new_expr_flag = False
-                    if token == '(':
-                        ops.append(token)
-                        unary_minus_flag = True
-                    elif token == ')':
-                        while ops and ops[-1] != '(':
-                            polish.append(ops.pop())
-                        if ops:
-                            ops.pop()
-                        unary_minus_flag = False
-                    elif token[0] == 'd':
-                        polish.append(token)
-                        unary_minus_flag = False
-                    else:
-                        # unary minuses are hard.
-                        if unary_minus_flag and token == '-':
-                            token = '_'
-                        unary_minus_flag = token in '*/+-'
+                elif token[0] == 'd':
+                    polish.append(token)
+                    unary_minus_flag = False
+                else:
+                    # unary minuses are hard.
+                    if unary_minus_flag and token == '-':
+                        token = '_'
+                    unary_minus_flag = token in '*/+-'
 
-                        # as cool as it would be to have strings of data then strings of operators, this works better
-                        while ops and prec[ops[-1]] >= prec[token]:
-                            polish.append(ops.pop())
-                        ops.append(token)
+                    # as cool as it would be to have strings of data then strings of operators, this works better
+                    while ops and prec[ops[-1]] >= prec[token]:
+                        polish.append(ops.pop())
+                    ops.append(token)
 
         polish.extend(ops[::-1])
 
