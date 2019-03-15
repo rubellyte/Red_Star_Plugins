@@ -52,7 +52,7 @@ class RoleRequest(BasePlugin):
 
         if not (args['add'] or args['remove']):
             role_str = "\n".join(x.name for x in msg.guild.roles if x.id in self.plugin_config[gid]["roles"])
-            for split_msg in split_message(f"**ANALYSIS: Currently approved requestable roles:```\n{role_str}```"):
+            for split_msg in split_message(f"**ANALYSIS: Currently approved requestable roles:**```\n{role_str}```"):
                 await respond(msg, split_msg)
         else:
             args['add'] = [r for r in [find_role(msg.guild, r) for r in args['add']] if r]
@@ -117,7 +117,7 @@ class RoleRequest(BasePlugin):
              syntax="[-a/--add (role mentions/ids/names)] [-r/--remove (role mentions/ids/names)]",
              perms={"manage_roles"},
              category="role_request")
-    async def _manage(self, msg):
+    async def _manage_default(self, msg):
         gid = str(msg.guild.id)
         self._initialize(gid)
 
