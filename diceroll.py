@@ -122,10 +122,10 @@ def parse_roll(roll_string: str):
     }
 
     b_ops = {
-        '+': lambda: stack.append(stack.pop() + stack.pop()),
-        '-': lambda: stack.append(stack.pop().__rsub__(stack.pop())),
-        '/': lambda: stack.append(stack.pop().__rtruediv__(stack.pop())),
-        '*': lambda: stack.append(stack.pop() * stack.pop())
+        '+': lambda x, y: stack.append(y + x),
+        '-': lambda x, y: stack.append(y - x),
+        '/': lambda x, y: stack.append(y / x),
+        '*': lambda x, y: stack.append(y * x)
     }
 
     while polish:
@@ -133,7 +133,7 @@ def parse_roll(roll_string: str):
         if isinstance(token, (int, float)):
             stack.append(token)
         elif len(stack) > 1 and token in b_ops:
-            b_ops[token]()
+            b_ops[token](stack.pop(), stack.pop())
         elif len(stack) > 0 and token in u_ops:
             u_ops[token]()
         elif token[0] == 'd':
