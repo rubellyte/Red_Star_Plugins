@@ -106,7 +106,7 @@ class ConsoleListener(BasePlugin):
         """
         self.logger.info("Shutdown called from console.")
         self.run_loop = False
-        asyncio.ensure_future(self.client.stop_bot())
+        raise SystemExit
 
     async def _get_config_cmd(self, args):
         """
