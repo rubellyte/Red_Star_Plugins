@@ -31,11 +31,11 @@ class DumpChannel(BasePlugin):
         except ValueError:
             raise CommandSyntaxError("Second Argument is not a valid integer.")
         try:
-            m_start = await msg.channel.get_message(m_start)
+            m_start = await msg.channel.fetch_message(m_start)
         except NotFound:
             raise CommandSyntaxError(f"No message with ID {m_start}")
         try:
-            m_end = await msg.channel.get_message(m_end)
+            m_end = await msg.channel.fetch_message(m_end)
         except NotFound:
             raise CommandSyntaxError(f"No message with ID {m_end}")
 
@@ -48,7 +48,7 @@ class DumpChannel(BasePlugin):
 
         t_list = [f"{str(m_end.author)} @ {str(m_end.created_at.strftime(s))}\n{m_end.clean_content}\n\n"]
 
-        async for msg in msg.channel.history(before=m_start, after=m_end, reverse=True, limit=None):
+        async for msg in msg.channel.history(before=m_start, after=m_end, oldest_first=True, limit=None):
             t_list.append(f"{str(msg.author)} @ {str(msg.created_at.strftime(s))}\n{msg.clean_content}\n\n")
 
         t_list.append(f"{str(m_start.author)} @ {str(m_start.created_at.strftime(s))}\n{m_start.clean_content}")
