@@ -349,7 +349,7 @@ class Roleplay(BasePlugin):
                 del self.bios[gid][char]
                 if char in self.plugin_config[gid]['pinned_bios']:
                     bio_msg = await msg.guild.get_channel(self.plugin_config[gid]['pinned_bios_channel'])\
-                        .get_message(self.plugin_config[gid]['pinned_bios'][char])
+                        .fetch_message(self.plugin_config[gid]['pinned_bios'][char])
                     await bio_msg.delete()  # deleting the actual record happens in on_message_delete
                 await respond(msg, f"**AFFIRMATIVE. Character {char} has been deleted.**")
 
@@ -468,7 +468,7 @@ class Roleplay(BasePlugin):
         if char not in self.bios[gid]:
             raise CommandSyntaxError(f"No bio with id {char}.")
 
-        if char in g_cfg['pinned_bios']:
+        if char in g_cfg.setdefault('pinned_bios', {}):
             raise CommandSyntaxError(f"Bio with id {char} is already pinned.")
 
         message = await respond(msg, None, embed=self.bios[gid][char].embed(msg.guild, g_cfg['race_roles']))
@@ -481,7 +481,7 @@ class Roleplay(BasePlugin):
         gid = str(guild.id)
         g_cfg = self.plugin_config[gid]
         if char in g_cfg['pinned_bios']:
-            bio_msg = await guild.get_channel(g_cfg['pinned_bios_channel']).get_message(g_cfg['pinned_bios'][char])
+            bio_msg = await guild.get_channel(g_cfg['pinned_bios_channel']).fetch_message(g_cfg['pinned_bios'][char])
             await bio_msg.edit(embed=self.bios[gid][char].embed(guild, g_cfg['race_roles']))
 
     def _initialize(self, gid):
@@ -494,6 +494,7 @@ class Roleplay(BasePlugin):
     async def on_message_delete(self, msg):
         gid = str(msg.guild.id)
         g_cfg = self.plugin_config.setdefault(gid, self.plugin_config['default'].copy())
-        if msg.id in g_cfg['pinned_bios'].values():
+
+        if 'pinned_bios' in g_cfg and msg.id in g_cfg['pinned_bios'].values():
             key = [k for k, v in g_cfg['pinned_bios'].items() if v == msg.id].pop()
             del g_cfg['pinned_bios'][key]
