@@ -145,7 +145,6 @@ class MOTD(BasePlugin):
             raise CommandSyntaxError("One of the arguments is not valid.")
         motd_path = get_guild_config(self, str(msg.guild.id), "motd_file")
         motds = self.motds[motd_path]
-        self.logger.debug([args.day, args.weekday, args.monthweek, args.month, args.date])
         try:
             if args.date:
                 lines = self._get_motds(motds, args.date)
@@ -153,7 +152,6 @@ class MOTD(BasePlugin):
                 lines = self._get_motds(motds, None, valid=(args.month, args.day, args.weekday, args.monthweek))
         except DataCarrier as dc:
             lines = dc.data
-        self.logger.debug(repr(lines))
         lines = "\n".join(lines)
         if not lines:
             lines = "None."
