@@ -22,10 +22,10 @@ class MOTD(BasePlugin):
     motds: dict
     last_run: int
 
-    valid_months = {"jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec", "any"}
-    valid_weekdays = {"mon", "tue", "wed", "thu", "fri", "sat", "sun", "any"}
-    valid_days = {str(i) for i in range(1, 32)} | {"any"}
-    valid_monthweeks = {"week-1", "week-2", "week-3", "week-4", "week-5", "any"}
+    valid_months = {"jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"}
+    valid_weekdays = {"mon", "tue", "wed", "thu", "fri", "sat", "sun"}
+    valid_days = {str(i) for i in range(1, 32)}
+    valid_monthweeks = {"week-1", "week-2", "week-3", "week-4", "week-5"}
     valid_dates = valid_months | valid_monthweeks | valid_weekdays | valid_days
 
     async def activate(self):
@@ -76,7 +76,7 @@ class MOTD(BasePlugin):
     def _get_motds(self, options, date:datetime.datetime, valid=None):
         if not valid:
             valid = (date.strftime("%b").lower(), date.strftime("%a").lower(),
-                     str(date.day), "week-" + str(week_of_month(date)), "any")
+                     str(date.day), "week-" + str(week_of_month(date)))
         results = []
         if options.get("holiday", False):
             raise DataCarrier(options["options"])
@@ -125,30 +125,31 @@ class MOTD(BasePlugin):
                            f"{' and set as holiday' if holiday else ''}.**")
 
     @Command("TestMotDs",
-             doc="Used for testing MOTD lines.",
+             doc="Used for testing MOTD lines. If a date is not provided, today's date will be used.",
              perms={"manage_guild"},
              category="debug",
              syntax="[-d/--day number] [-wd/--weekday weekday] [-mw/--monthweek week-x] [-m/--month month]"
                     "OR [-dt/--dt ISO-format date]")
     async def _testmotd(self, msg):
+        today = datetime.datetime.now()
         parser = RSArgumentParser()
-        parser.add_argument("-d",  "--day", default="any")
-        parser.add_argument("-wd", "--weekday", default="any")
-        parser.add_argument("-mw", "--monthweek", default="any")
-        parser.add_argument("-m",  "--month", default="any")
+        parser.add_argument("-d",  "--day", default=today.day)
+        parser.add_argument("-wd", "--weekday", default=today.strftime("%a").lower())
+        parser.add_argument("-mw", "--monthweek", default="week-" + str(week_of_month(date)))
+        parser.add_argument("-m",  "--month", default=today.strftime("%b").lower())
         parser.add_argument("-dt", "--date", default=None, type=datetime.datetime.fromisoformat)
         args = parser.parse_args(msg.clean_content.split()[1:])
-        if args.month not in self.valid_months \
-                or args.day not in self.valid_days \
-                or args.weekday not in self.valid_days \
-                or args.monthweek not in self.valid_monthweeks:
-            raise CommandSyntaxError("One of the arguments is not valid.")
         motd_path = get_guild_config(self, str(msg.guild.id), "motd_file")
         motds = self.motds[motd_path]
         try:
             if args.date:
                 lines = self._get_motds(motds, args.date)
             else:
+                if args.month not in self.valid_months \
+                        or args.day not in self.valid_days \
+                        or args.weekday not in self.valid_days \
+                        or args.monthweek not in self.valid_monthweeks:
+                    raise CommandSyntaxError("One of the arguments is not valid.")
                 lines = self._get_motds(motds, None, valid=(args.month, args.day, args.weekday, args.monthweek))
         except DataCarrier as dc:
             lines = dc.data
