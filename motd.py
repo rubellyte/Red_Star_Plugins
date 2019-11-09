@@ -76,7 +76,7 @@ class MOTD(BasePlugin):
     def _get_motds(self, options, date:datetime.datetime, valid=None):
         if not valid:
             valid = (date.strftime("%b").lower(), date.strftime("%a").lower(),
-                     str(date.day), "week-" + str(week_of_month(date)))
+                     str(date.day), "week-" + str(week_of_month(date)), "any")
         results = []
         if options.get("holiday", False):
             raise DataCarrier(options["options"])
