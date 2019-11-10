@@ -316,6 +316,8 @@ class Roleplay(BasePlugin):
                     await respond(msg, f"**AFFIRMATIVE. {field.capitalize()} {'' if value else 're'}set.**")
                 except ValueError as e:
                     raise CommandSyntaxError(f"Exceeded length of field {field.capitalize()}: {e} characters.")
+                except KeyError as e:
+                    raise CommandSyntaxError(e)
 
             # compiling the bio into a json file for storage and editing
             if args['dump']:
