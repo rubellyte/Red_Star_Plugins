@@ -168,5 +168,5 @@ def week_of_month(date):
     return (date.day + first_of_month) // 7 + 1
     
 def is_last_week_of_month(date):
-    last_of_month = date.replace(month=(date.month + 1) % 12, day=1) - datetime.timedelta(days=1)
+    last_of_month = date.replace(month=(date.month % 12 + 1), day=1) - datetime.timedelta(days=1)
     return week_of_month(date) == week_of_month(last_of_month)
