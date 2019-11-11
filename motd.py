@@ -25,7 +25,7 @@ class MOTD(BasePlugin):
     valid_months = {"jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"}
     valid_weekdays = {"mon", "tue", "wed", "thu", "fri", "sat", "sun"}
     valid_days = {str(i) for i in range(1, 32)}
-    valid_monthweeks = {"week-1", "week-2", "week-3", "week-4", "week-5"}
+    valid_monthweeks = {"week-1", "week-2", "week-3", "week-4", "week-5", "week-6", "last-week"}
     valid_dates = valid_months | valid_monthweeks | valid_weekdays | valid_days
 
     async def activate(self):
@@ -75,8 +75,10 @@ class MOTD(BasePlugin):
 
     def _get_motds(self, options, date:datetime.datetime, valid=None):
         if not valid:
-            valid = (date.strftime("%b").lower(), date.strftime("%a").lower(),
-                     str(date.day), "week-" + str(week_of_month(date)))
+            valid = {date.strftime("%b").lower(), date.strftime("%a").lower(),
+                     str(date.day), "week-" + str(week_of_month(date))}
+            if is_last_week_of_month(date):
+                valid.add("last-week")
         results = []
         if options.get("holiday", False):
             raise DataCarrier(options["options"])
@@ -164,3 +166,7 @@ def week_of_month(date):
     if first_of_month == 6:
         first_of_month -= 7
     return (date.day + first_of_month) // 7 + 1
+    
+def is_last_week_of_month(date):
+    last_of_month = date.replace(month=(date.month + 1) % 12, day=1) - datetime.timedelta(days=1)
+    return week_of_month(date) == week_of_month(last_of_month)
