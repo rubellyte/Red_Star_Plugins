@@ -116,7 +116,7 @@ class Roleplay(BasePlugin):
                 t_embed.set_image(url=self.image)
 
             for field in (f for f in self.fields[9:] if self.__dict__[f]):
-                t_embed.add_field(name=field.capitalize(), value=self.__dict__[field])
+                t_embed.add_field(name=field.capitalize(), value=self.__dict__[field], inline=False)
 
             return t_embed
 
@@ -281,7 +281,13 @@ class Roleplay(BasePlugin):
         parser.add_argument('--delete', action='store_true')  # doesn't get a short flag for safety
         parser.add_argument('-r', '--rename', nargs="+")
 
-        args = parser.parse_args(shlex.split(msg.clean_content))
+        try:
+            args = shlex.split(msg.clean_content)
+        except ValueError as e:
+            self.logger.warning("Unable to split {data.content}. {e}")
+            raise CommandSyntaxError(e)
+
+        args = parser.parse_args(args)
 
         if args['name']:
             args['name'] = self.Bio._name(' '.join(args['name']))
@@ -316,6 +322,8 @@ class Roleplay(BasePlugin):
                     await respond(msg, f"**AFFIRMATIVE. {field.capitalize()} {'' if value else 're'}set.**")
                 except ValueError as e:
                     raise CommandSyntaxError(f"Exceeded length of field {field.capitalize()}: {e} characters.")
+                except KeyError as e:
+                    raise CommandSyntaxError(e)
 
             # compiling the bio into a json file for storage and editing
             if args['dump']:
