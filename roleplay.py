@@ -281,7 +281,13 @@ class Roleplay(BasePlugin):
         parser.add_argument('--delete', action='store_true')  # doesn't get a short flag for safety
         parser.add_argument('-r', '--rename', nargs="+")
 
-        args = parser.parse_args(shlex.split(msg.clean_content))
+        try:
+            args = shlex.split(msg.clean_content)
+        except ValueError as e:
+            self.logger.warning("Unable to split {data.content}. {e}")
+            raise CommandSyntaxError(e)
+
+        args = parser.parse_args(args)
 
         if args['name']:
             args['name'] = self.Bio._name(' '.join(args['name']))
