@@ -116,7 +116,7 @@ class Roleplay(BasePlugin):
                 t_embed.set_image(url=self.image)
 
             for field in (f for f in self.fields[9:] if self.__dict__[f]):
-                t_embed.add_field(name=field.capitalize(), value=self.__dict__[field])
+                t_embed.add_field(name=field.capitalize(), value=self.__dict__[field], inline=False)
 
             return t_embed
 
