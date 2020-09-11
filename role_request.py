@@ -202,7 +202,7 @@ class RoleRequest(BasePlugin):
             return
         msg = reaction.message
         mid = str(msg.id)
-        if self.reacts[mid]:
+        if mid in self.reacts:
             roles = []
 
             for react, roleId in self.reacts[mid]:
@@ -226,7 +226,7 @@ class RoleRequest(BasePlugin):
             return
         msg = reaction.message
         mid = str(msg.id)
-        if self.reacts[mid]:
+        if mid in self.reacts:
             roles = []
 
             for react, roleId in self.reacts[mid]:
@@ -241,6 +241,6 @@ class RoleRequest(BasePlugin):
 
     async def on_message_delete(self, msg):
         mid = str(msg.id)
-        if self.reacts[mid]:
+        if mid in self.reacts:
             del self.reacts[mid]
             self.reacts.save()
