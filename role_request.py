@@ -169,7 +169,8 @@ class RoleRequest(BasePlugin):
     @Command("OfferRoles",
              syntax="(reaction) (role)...",
              perms={"manage_roles"},
-             category="role_request")
+             category="role_request",
+             run_anywhere=True)
     async def _offer_roles(self, msg):
         args = msg.content.split()[1::]
         found = []
