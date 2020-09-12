@@ -213,7 +213,7 @@ class RoleRequest(BasePlugin):
             if roles:
                 await user.add_roles(*roles, reason="Added by request through plugin.")
                 return
-        await msg.remove_reaction(reaction, user)
+            await msg.remove_reaction(reaction, user)
 
     async def on_reaction_remove(self, reaction, user):
         """
@@ -237,7 +237,6 @@ class RoleRequest(BasePlugin):
             if roles:
                 await user.remove_roles(*roles, reason="Removed by request through plugin.")
                 return
-        await msg.remove_reaction(reaction, user)
 
     async def on_message_delete(self, msg):
         mid = str(msg.id)
