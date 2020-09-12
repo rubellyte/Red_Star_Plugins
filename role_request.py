@@ -191,46 +191,44 @@ class RoleRequest(BasePlugin):
             self.reacts[str(message.id)] = parsedFound
             self.reacts.save()
 
-    async def on_reaction_add(self, reaction, user):
+    async def on_raw_reaction_add(self, payload):
         """
-        :type reaction:discord.Reaction
-        :param reaction:
-        :param user:
+        :param payload:
         :return:
         """
-        if user == self.client.user:
+        if payload.user_id == self.client.user.id:
             return
-        msg = reaction.message
-        mid = str(msg.id)
+        mid = str(payload.message_id)
         if mid in self.reacts:
             roles = []
+            msg = await self.client.get_channel(payload.channel_id).fetch_message(payload.message_id)
+            user = self.client.get_guild(payload.guild_id).get_member(payload.user_id)
 
             for react, roleId in self.reacts[mid]:
-                if react == str(reaction.emoji):
+                if react == str(payload.emoji):
                     role = msg.guild.get_role(roleId)
                     if role not in user.roles:
                         roles.append(role)
             if roles:
                 await user.add_roles(*roles, reason="Added by request through plugin.")
                 return
-            await msg.remove_reaction(reaction, user)
+            await msg.remove_reaction(payload.emoji, user)
 
-    async def on_reaction_remove(self, reaction, user):
+    async def on_raw_reaction_remove(self, payload):
         """
-        :type reaction:discord.Reaction
-        :param reaction:
-        :param user:
+        :param payload:
         :return:
         """
-        if user == self.client.user:
+        if payload.user_id == self.client.user.id:
             return
-        msg = reaction.message
-        mid = str(msg.id)
+        mid = str(payload.message_id)
         if mid in self.reacts:
             roles = []
+            msg = await self.client.get_channel(payload.channel_id).fetch_message(payload.message_id)
+            user = self.client.get_guild(payload.guild_id).get_member(payload.user_id)
 
             for react, roleId in self.reacts[mid]:
-                if react == str(reaction.emoji):
+                if react == str(payload.emoji):
                     role = msg.guild.get_role(roleId)
                     if role in user.roles:
                         roles.append(role)
