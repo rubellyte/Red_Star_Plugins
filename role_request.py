@@ -4,8 +4,9 @@ from red_star.rs_utils import respond, RSArgumentParser, split_message, find_rol
 from red_star.rs_errors import CommandSyntaxError, UserPermissionError
 from copy import deepcopy
 from discord import Member
+from discord.errors import HTTPException
 import shlex
-
+from re import match
 
 class RoleRequest(BasePlugin):
     name = "role_request"
@@ -22,6 +23,9 @@ class RoleRequest(BasePlugin):
     def _initialize(self, gid):
         if gid not in self.plugin_config:
             self.plugin_config[gid] = deepcopy(self.plugin_config['default'])
+
+    async def activate(self):
+        self.reacts = self.config_manager.get_plugin_config_file("role_request_reaction_messages.json")
 
     async def on_member_join(self, member: Member):
         """
@@ -161,3 +165,80 @@ class RoleRequest(BasePlugin):
                 await respond(msg, output_str)
             else:
                 raise CommandSyntaxError
+
+    @Command("OfferRoles",
+             syntax="(reaction) (role)...",
+             perms={"manage_roles"},
+             category="role_request",
+             run_anywhere=True)
+    async def _offer_roles(self, msg):
+        args = msg.content.split()[1::]
+        found = []
+        for emote, roleQuery in zip(args[::2], args[1::2]):
+            role = find_role(msg.guild, roleQuery)
+            if role:
+                found.append((emote, role))
+
+        if found:
+            message = await respond(msg, "**Following roles available through reacting to this message:**\n"+
+                                    "\n".join(f"> {react}: {r.mention}" for react, r in found))
+            parsedFound = tuple((e, r.id) for e, r in found)
+            for r, _ in found:
+                try:
+                    await message.add_reaction(r)
+                except HTTPException as e:
+                    await message.delete()
+                    raise CommandSyntaxError('Do not use emoji unavailable to the bot.')
+            self.reacts[str(message.id)] = parsedFound
+            self.reacts.save()
+
+    async def on_raw_reaction_add(self, payload):
+        """
+        :param payload:
+        :return:
+        """
+        if payload.user_id == self.client.user.id:
+            return
+        mid = str(payload.message_id)
+        if mid in self.reacts:
+            roles = []
+            msg = await self.client.get_channel(payload.channel_id).fetch_message(payload.message_id)
+            user = self.client.get_guild(payload.guild_id).get_member(payload.user_id)
+
+            for react, roleId in self.reacts[mid]:
+                if react == str(payload.emoji):
+                    role = msg.guild.get_role(roleId)
+                    if role not in user.roles:
+                        roles.append(role)
+            if roles:
+                await user.add_roles(*roles, reason="Added by request through plugin.")
+                return
+            await msg.remove_reaction(payload.emoji, user)
+
+    async def on_raw_reaction_remove(self, payload):
+        """
+        :param payload:
+        :return:
+        """
+        if payload.user_id == self.client.user.id:
+            return
+        mid = str(payload.message_id)
+        if mid in self.reacts:
+            roles = []
+            msg = await self.client.get_channel(payload.channel_id).fetch_message(payload.message_id)
+            user = self.client.get_guild(payload.guild_id).get_member(payload.user_id)
+
+            for react, roleId in self.reacts[mid]:
+                if react == str(payload.emoji):
+                    role = msg.guild.get_role(roleId)
+                    if role in user.roles:
+                        roles.append(role)
+            if roles:
+                await user.remove_roles(*roles, reason="Removed by request through plugin.")
+                return
+
+    async def on_message_delete(self, msg):
+        mid = str(msg.id)
+        if mid in self.reacts:
+            del self.reacts[mid]
+            self.reacts.save()
