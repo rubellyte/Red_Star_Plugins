@@ -78,7 +78,7 @@ class Roleplay(BasePlugin):
             :param name:
             :return:
             """
-            clean = re.sub('\s+', ' ', re.sub('^\s+|\s+$|\n|\r', '', name))
+            clean = re.sub(r'\s+', ' ', re.sub(r'^\s+|\s+$|\n|\r', '', name))
             if not clean:
                 raise CommandSyntaxError('Empty name provided.')
             return clean[:64]

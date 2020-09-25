@@ -108,7 +108,8 @@ def parse_roll(roll_string: str):
         elif reroll == Adv.d:
             roll_a = roll_a if sum(roll_a) < sum(roll_b) else roll_b
 
-        rolls.append(f"{num}d{side}{'a' if reroll == Adv.a else ('d' if reroll == Adv.d else '')} - {sum(roll_a):2d} {roll_a}")
+        rolls.append(f"{num}d{side}{'a' if reroll == Adv.a else ('d' if reroll == Adv.d else '')} - {sum(roll_a):2d}"
+                     f" {roll_a}")
 
         stack.append(sum(roll_a))
 

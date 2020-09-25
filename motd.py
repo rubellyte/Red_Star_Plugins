@@ -73,7 +73,7 @@ class MOTD(BasePlugin):
                 line = choice(lines)
             await chan.send(line)
 
-    def _get_motds(self, options, date:datetime.datetime, valid=None):
+    def _get_motds(self, options, date, valid=None):
         if not valid:
             valid = {date.strftime("%b").lower(), date.strftime("%a").lower(),
                      str(date.day), "week-" + str(week_of_month(date))}
@@ -137,7 +137,7 @@ class MOTD(BasePlugin):
         parser = RSArgumentParser()
         parser.add_argument("-d",  "--day", default=today.day)
         parser.add_argument("-wd", "--weekday", default=today.strftime("%a").lower())
-        parser.add_argument("-mw", "--monthweek", default="week-" + str(week_of_month(date)))
+        parser.add_argument("-mw", "--monthweek", default="week-" + str(week_of_month(today)))
         parser.add_argument("-m",  "--month", default=today.strftime("%b").lower())
         parser.add_argument("-dt", "--date", default=None, type=datetime.datetime.fromisoformat)
         args = parser.parse_args(msg.clean_content.split()[1:])
@@ -167,6 +167,7 @@ def week_of_month(date):
         first_of_month -= 7
     return (date.day + first_of_month) // 7 + 1
     
+
 def is_last_week_of_month(date):
     last_of_month = date.replace(month=(date.month % 12 + 1), day=1) - datetime.timedelta(days=1)
     return week_of_month(date) == week_of_month(last_of_month)

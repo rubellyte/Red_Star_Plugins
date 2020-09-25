@@ -815,7 +815,7 @@ class RoleplayEconomy(BasePlugin):
                 raise CommandSyntaxError(f"Not a valid JSON file: {e}.\n")
         else:
             # Otherwise, there's a code block attached. If there isn't, welp.
-            data = re.match("(?P<char>.+?)\s+```.*?(?P<json>{.+}).*```", data, re.DOTALL)
+            data = re.match(r"(?P<char>.+?)\s+```.*?(?P<json>{.+}).*```", data, re.DOTALL)
             char = data['char']
             try:
                 data = json.loads(data['json'])
@@ -929,7 +929,7 @@ class RoleplayEconomy(BasePlugin):
         else:
             # Otherwise, there's a code block attached. If there isn't, welp.
             # matches first word after command and then the object from inside the codeblock.
-            data = re.match("(?P<item>[^\s]+).+```.*?(?P<json>{.+}).*```", data, re.DOTALL)
+            data = re.match(r"(?P<item>[^\s]+).+```.*?(?P<json>{.+}).*```", data, re.DOTALL)
             item = data['item']
             try:
                 data = json.loads(data['json'])
@@ -1018,7 +1018,7 @@ class RoleplayEconomy(BasePlugin):
         else:
             # Otherwise, there's a code block attached. If there isn't, welp.
             # matches first word after command and then the object from inside the codeblock.
-            data = re.match("(?P<char>.+?)\s+```.*?(?P<json>{.+}).*```", data, re.DOTALL)
+            data = re.match(r"(?P<char>.+?)\s+```.*?(?P<json>{.+}).*```", data, re.DOTALL)
             char = data['char']
             try:
                 data = json.loads(data['json'])

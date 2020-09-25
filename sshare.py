@@ -20,7 +20,8 @@ class ScreenShare(BasePlugin):
 
         embed = {
             "color": 0xFF0000,
-            "description": f"**[Screen share link for {voice_channel}.](https://discordapp.com/channels/{msg.guild.id}/{voice_channel.id})**"
+            "description": f"**[Screen share link for {voice_channel}.]"
+                           f"(https://discordapp.com/channels/{msg.guild.id}/{voice_channel.id})**"
         }
 
         await respond(msg, embed=verify_embed(embed))

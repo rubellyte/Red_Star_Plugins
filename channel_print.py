@@ -3,7 +3,8 @@ from red_star.plugin_manager import BasePlugin
 from red_star.rs_errors import CommandSyntaxError
 from red_star.rs_utils import respond, JsonFileDict, decode_json, split_message, verify_embed
 from urllib.parse import urlparse
-from urllib.request import urlopen, URLError
+from urllib.request import urlopen
+from urllib.error import URLError
 import mimetypes
 import re
 import json
