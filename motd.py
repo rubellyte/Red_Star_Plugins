@@ -135,7 +135,7 @@ class MOTD(BasePlugin):
     async def _testmotd(self, msg):
         today = datetime.datetime.now()
         parser = RSArgumentParser()
-        parser.add_argument("-d",  "--day", default=today.day)
+        parser.add_argument("-d",  "--day", default=str(today.day))
         parser.add_argument("-wd", "--weekday", default=today.strftime("%a").lower())
         parser.add_argument("-mw", "--monthweek", default="week-" + str(week_of_month(today)))
         parser.add_argument("-m",  "--month", default=today.strftime("%b").lower())
@@ -149,7 +149,7 @@ class MOTD(BasePlugin):
             else:
                 if args.month not in self.valid_months \
                         or args.day not in self.valid_days \
-                        or args.weekday not in self.valid_days \
+                        or args.weekday not in self.valid_weekdays \
                         or args.monthweek not in self.valid_monthweeks:
                     raise CommandSyntaxError("One of the arguments is not valid.")
                 lines = self._get_motds(motds, None, valid=(args.month, args.day, args.weekday, args.monthweek))
