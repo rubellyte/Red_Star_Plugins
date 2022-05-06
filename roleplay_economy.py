@@ -13,22 +13,23 @@ from time import time
 
 
 class Character:
+    # noinspection GrazieInspection
     """
-    A wrapper class for interacting with the "database", making it all nice and tidy.
-    Turns self.chars[gid][character] into Character(self, gid, character) which then handles similar duties.
-    This is based around characters because they are the ones with most manipulation being carried out -
-    all the complicated stuff like item overriding is usually done in context of a character.
+        A wrapper class for interacting with the "database", making it all nice and tidy.
+        Turns self.chars[gid][character] into Character(self, gid, character) which then handles similar duties.
+        This is based around characters because they are the ones with most manipulation being carried out -
+        all the complicated stuff like item overriding is usually done in context of a character.
 
-    properties:
+        properties:
 
-    _parent: the parent instance of RoleplayEconomy
-    _chars: short for _parent.chars[gid]
-    shop: short for _parent.shop_items[gid] (not prefaced with _ because it's useful outside the class)
-    gid: guild ID in string form
-    id: the character ID, string form
+        _parent: the parent instance of RoleplayEconomy
+        _chars: short for _parent.chars[gid]
+        shop: short for _parent.shop_items[gid] (not prefaced with _ because it's useful outside the class)
+        gid: guild ID in string form
+        id: the character ID, string form
 
-    Additionally, the class allows setting/getting of the character database entry fields through Character.field
-    """
+        Additionally, the class allows setting/getting of the character database entry fields through Character.field
+        """
 
     _fields = ['owner', 'name', 'image', 'money', 'inv', 'inv_key', 'fields']
 
@@ -61,7 +62,7 @@ class Character:
         """
         Function to find an item in (key) inventory of the character, by index, name or id
         :param query: index, name or id of the item
-        :param key: whether or not to search in key inventory
+        :param key: whether to search in key inventory
         :return:
         """
         try:
@@ -80,7 +81,7 @@ class Character:
         Ensures same items are stacked, allows taking items through negative counts, adds new items and purges
         empty stacks.
         :param item: {'name':'', 'override':{}, 'count': 0}
-        :param key: whether or not to search in key inventory
+        :param key: whether to search in key inventory
         :return:
         """
         inv = self.inv_key if key else self.inv
@@ -145,7 +146,7 @@ class Character:
                 _name = item['override'].get('name')
                 _name = _name[:23] + '*' if _name else self.shop[item['name']]['name'][:24]
             else:
-                # the verification will not prune items that aren't available any more, for user friendliness.
+                # the verification will not prune items that aren't available anymore, for user-friendliness.
                 # unfortunately, that means that those items must show up in the inventory SOMEHOW.
                 _name = f"{item['name'][:24]:-^24}"
             items += f"{_name:<24}×{item['count']:5d}\n" if item['count'] > 1 else f"{_name}\n"
@@ -205,7 +206,7 @@ class Shop:
         self._gid = gid
         self.page = 0
 
-        # pre-generate the item text lines. This is an expensive-ish operation and it's better to cache it.
+        # pre-generate the item text lines. This is an expensive-ish operation, and it's better to cache it.
 
         items = [x for x in parent.shop_items[self._gid].values()
                  if x['inshop'] and (x['category'] == category or not category)]
@@ -297,7 +298,7 @@ class RoleplayEconomy(BasePlugin):
     shop_template = {
         "user": 0,       # user ID
         "page": 0,       # the current page
-        "mpages": 0,     # the max page (pre-calculated because fuck that)
+        "mpages": 0,     # the max page (pre-calculated because calculation is complicated)
         "category": "",  # the category of items to display
         "time": 0,       # time.time() to auto-purge the message (the message ID is the key)
         "message": None  # the message object, for deletions.
@@ -346,7 +347,7 @@ class RoleplayEconomy(BasePlugin):
     def _generate_item_embed(item: dict, custom=False):
         """
         Helper function to generate item embeds, given (overriden) item data.
-        The function does not do it's own overriding on account of that requiring it be tied to Character class.
+        The function does not do its own overriding on account of that requiring it be tied to Character class.
         :param item:
         :param custom:
         :return:
@@ -596,7 +597,7 @@ class RoleplayEconomy(BasePlugin):
             else:
                 await respond(msg, embed=self._generate_item_embed(char.override_item(item), bool(item['override'])))
         elif args['dump']:
-            # the second part of the multi-purpose -d flag. Dumps character for backup/editing.
+            # the second part of the multipurpose -d flag. Dumps character for backup/editing.
             async with msg.channel.typing():
                 await respond(msg, "**AFFIRMATIVE. File upload completed.**",
                               file=File(BytesIO(bytes(json.dumps(char._chars[char.id], indent=2, ensure_ascii=False),
@@ -766,7 +767,7 @@ class RoleplayEconomy(BasePlugin):
                                                         char.shop['default_item'])['name']).lower() == query].pop()
             except IndexError:
                 try:
-                    # okay, maybe it'll just be a position? Maybe?
+                    # okay, maybe it'll just be a position?
                     item = (char.inv_key if key else char.inv)[int(query) - 1]
                 except (ValueError, IndexError):
                     raise CommandSyntaxError(f"No item with id/name/position {query}.")
@@ -824,7 +825,7 @@ class RoleplayEconomy(BasePlugin):
 
         char = Character(self, gid, char.lower())
         try:
-            # all items need SOME sort of a base item that they can override from.
+            # all items need SOME sort of base item that they can override from.
             if data['name'] not in char.shop:
                 raise CommandSyntaxError("Base item not found.")
             # and we don't want any other garbage users may upload.
@@ -929,7 +930,7 @@ class RoleplayEconomy(BasePlugin):
         else:
             # Otherwise, there's a code block attached. If there isn't, welp.
             # matches first word after command and then the object from inside the codeblock.
-            data = re.match(r"(?P<item>[^\s]+).+```.*?(?P<json>{.+}).*```", data, re.DOTALL)
+            data = re.match(r"(?P<item>\S+).+```.*?(?P<json>{.+}).*```", data, re.DOTALL)
             item = data['item']
             try:
                 data = json.loads(data['json'])

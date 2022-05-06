@@ -56,7 +56,7 @@ class Levelling(BasePlugin):
 
         # Iterate over all the xp values, counting up the position and forming a nice string.
         # Not using enumerate because some positions may be skipped due to missing members.
-        # Could possibly squeeze it into a list comprehension but it would be a monstrosity.
+        # Could possibly squeeze it into a list comprehension, but it would be a monstrosity.
 
         pos = 1
         xp_list = []

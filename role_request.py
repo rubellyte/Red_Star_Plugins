@@ -6,7 +6,7 @@ from copy import deepcopy
 from discord import Member
 from discord.errors import HTTPException
 import shlex
-from re import match
+
 
 class RoleRequest(BasePlugin):
     name = "role_request"
@@ -99,20 +99,21 @@ class RoleRequest(BasePlugin):
         except IndexError:
             raise CommandSyntaxError("Role query required.")
 
-        role = find_role(msg.guild, query)
-
-        if not role:
+        roles = find_role(msg.guild, query, return_all=True)
+        if not roles:
             raise CommandSyntaxError(f"Unable to find role {query}.")
-        elif role.id not in self.plugin_config[gid]['roles']:
-            raise UserPermissionError(f"Role {role.name} is not requestable.")
+        roles = [x for x in roles if x.id in self.plugin_config[gid]['roles']]
+        if not roles:
+            raise UserPermissionError(f"Role {query} is not requestable.")
+        role = roles[0]
+
+        if role in msg.author.roles:
+            rem = True
+            await msg.author.remove_roles(role, reason="Removed by request through plugin.")
         else:
-            if role in msg.author.roles:
-                rem = True
-                await msg.author.remove_roles(role, reason="Removed by request through plugin.")
-            else:
-                rem = False
-                await msg.author.add_roles(role, reason="Added by request through plugin.")
-            await respond(msg, f"**AFFIRMATIVE. Role {role.name} {'removed' if rem else 'added'}.**")
+            rem = False
+            await msg.author.add_roles(role, reason="Added by request through plugin.")
+        await respond(msg, f"**AFFIRMATIVE. Role {role.name} {'removed' if rem else 'added'}.**")
 
     @Command("DefaultRole",
              doc="-a/--add   : Adds specified roles to the list of default roles.\n"
@@ -180,16 +181,16 @@ class RoleRequest(BasePlugin):
                 found.append((emote, role))
 
         if found:
-            message = await respond(msg, "**Following roles available through reacting to this message:**\n"+
+            message = await respond(msg, "**Following roles available through reacting to this message:**\n" +
                                     "\n".join(f"> {react}: {r.mention}" for react, r in found))
-            parsedFound = tuple((e, r.id) for e, r in found)
+            parsed_found = tuple((e, r.id) for e, r in found)
             for r, _ in found:
                 try:
                     await message.add_reaction(r)
-                except HTTPException as e:
+                except HTTPException:
                     await message.delete()
                     raise CommandSyntaxError('Do not use emoji unavailable to the bot.')
-            self.reacts[str(message.id)] = parsedFound
+            self.reacts[str(message.id)] = parsed_found
             self.reacts.save()
 
     async def on_raw_reaction_add(self, payload):

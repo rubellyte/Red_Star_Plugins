@@ -102,7 +102,7 @@ class Roleplay(BasePlugin):
             t_member = guild.get_member(self.author)
             if t_member:
                 t_embed.set_footer(text=f"Character belonging to {t_member.display_name}",
-                                   icon_url=t_member.avatar_url)
+                                   icon_url=t_member.avatar.url)
 
             t_embed.description = "```\n" + \
                                   '\n'.join([f"{f.capitalize():<7}: {self.__dict__[f]}" for f in self.fields[2:6] if
@@ -158,7 +158,8 @@ class Roleplay(BasePlugin):
         args = parser.parse_args(shlex.split(msg.content))
 
         if not (args['add'] or args['remove']):
-            approved_roles = "\n".join(x.name for x in msg.guild.roles if x.id in self.plugin_config[gid]["race_roles"])
+            approved_roles = "\n".join(x.name for x in msg.guild.roles
+                                       if x.id in self.plugin_config[gid]["race_roles"])
             for split_msg in split_message(f"**ANALYSIS: Currently approved race roles:**```\n{approved_roles}```"):
                 await respond(msg, split_msg)
         else:
@@ -309,7 +310,7 @@ class Roleplay(BasePlugin):
                     await respond(msg, f"**AFFIRMATIVE. ANALYSIS: Created character {args['name']}.**")
 
             if not (self.bios[gid][char].author == msg.author.id or args['dump'] or
-                    msg.author.permissions_in(msg.channel).manage_messages or
+                    msg.channel.permissions_for(msg.author).manage_messages or
                     self.config_manager.is_maintainer(msg.author)):
                 raise UserPermissionError("Character belongs to another user.")
 
@@ -410,7 +411,7 @@ class Roleplay(BasePlugin):
 
         name = self.Bio._name(data['name']).lower()
 
-        # 'fullname' key only exists for users sake and must be dealt with specially
+        # 'fullname' key only exists for users' sake and must be dealt with specially
         try:
             data['name'] = data['fullname'] or data['name']
             del data['fullname']
@@ -422,7 +423,7 @@ class Roleplay(BasePlugin):
 
         new_char = self.Bio.blank_bio(msg.author.id, data['name'])
 
-        # the Bio.set() method includes all the checks for length that we may need, just gotta let it do it's thing.
+        # the Bio.set() method includes all the checks for length that we may need, just gotta let it do its thing.
         for field, value in data.items():
             try:
                 new_char.set(field, value)

@@ -15,7 +15,7 @@ from io import BytesIO
 def verify_document(doc: list):
     """
     A helper function to verify entire documents.
-    Verifies messages being of correct length, embeds being valid and file links being non-mangled.
+    Verifies that messages are of correct length, embeds are valid and file links are non-mangled.
     :param doc:
     :return:
     """

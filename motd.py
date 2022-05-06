@@ -1,5 +1,6 @@
 import datetime
 import json
+import discord.utils
 from random import choice
 from red_star.plugin_manager import BasePlugin
 from red_star.rs_errors import CommandSyntaxError, ChannelNotFoundError, DataCarrier
@@ -32,7 +33,7 @@ class MOTD(BasePlugin):
         self.motds = {}
         self.motds_folder = self.client.storage_dir / "motds"
         self.motds_folder.mkdir(parents=True, exist_ok=True)
-        self.last_run = datetime.datetime.utcnow().day
+        self.last_run = discord.utils.utcnow().day
         for guild in self.client.guilds:
             motd_file = get_guild_config(self, str(guild.id), "motd_file")
             if motd_file not in self.motds:
