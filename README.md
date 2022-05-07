@@ -1,3 +1,6 @@
+# This repository is archived.
+The plugins contained in this repository have been returned to the main repo, now that plugins can be freely disabled. Users should *not* use files from this repository, which is only kept for posterity's sake.
+
 # Red Star Bot - Extra Plugins
 ![PyPI](https://img.shields.io/badge/Python-3.7-blue.svg)
 
